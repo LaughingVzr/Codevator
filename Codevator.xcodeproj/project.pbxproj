@@ -1,0 +1,607 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		050A52326F31F0AC1E259C9B /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBB1E98FBC82A02E691E31C /* App.swift */; };
+		11FB8B8477520F33FF0F6C9C /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EE0C04BD0BE3573CF3A105B /* SessionTests.swift */; };
+		2918897A0A8EAD860FCF7E08 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = ED2C3372BB99D11B137A086E /* SwiftTerm */; };
+		72EEBB8E38581DF91836B90E /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02CD488E55D34DF89FE5AC3 /* Core.swift */; };
+		81345251D8478E17B27DF2BE /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D665E777445D8E19D37B31F /* Workspace.swift */; };
+		942BBF15D89CD61F183B8ACA /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F55382C64FF616949FB4C6A4 /* CoreTests.swift */; };
+		99EC892C80BD1ECCDC34A33E /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 0929055E9182D8934224540E /* AppIcon.icns */; };
+		B3A77A5CEE9A4D7867C74C29 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 721F7205DE083A8BBBCD2F0C /* Cocoa.framework */; };
+		BF0BEBCA73935BD1C3CC636D /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 721F7205DE083A8BBBCD2F0C /* Cocoa.framework */; };
+		DF6D97C89FA027187B5B0506 /* Sessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1FF2D668C8C08534CC3395 /* Sessions.swift */; };
+		E7C333F4B57ADE0BE0C52B72 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 721F7205DE083A8BBBCD2F0C /* Cocoa.framework */; };
+		ED52A82EB6DD4AB8E31B50B6 /* TerminalEditingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A456C518E486F47DD34DF53 /* TerminalEditingUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2142635711F9D4F9B86735A8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0E7DAC8BB2D2F54FFA216B9E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5AC66EDE157D821483681999;
+			remoteInfo = Codevator;
+		};
+		B65FD207E28015CFE3F3BA0F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0E7DAC8BB2D2F54FFA216B9E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5AC66EDE157D821483681999;
+			remoteInfo = Codevator;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0929055E9182D8934224540E /* AppIcon.icns */ = {isa = PBXFileReference; includeInIndex = 1; path = AppIcon.icns; sourceTree = "<group>"; };
+		0D665E777445D8E19D37B31F /* Workspace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
+		205DBCCE8962F7DB71AE1769 /* Codevator.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codevator.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3EE0C04BD0BE3573CF3A105B /* SessionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
+		5A456C518E486F47DD34DF53 /* TerminalEditingUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalEditingUITests.swift; sourceTree = "<group>"; };
+		721F7205DE083A8BBBCD2F0C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		9D1FF2D668C8C08534CC3395 /* Sessions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Sessions.swift; sourceTree = "<group>"; };
+		9DBB1E98FBC82A02E691E31C /* App.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		B02CD488E55D34DF89FE5AC3 /* Core.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Core.swift; sourceTree = "<group>"; };
+		B732612FB0B6615718337F4D /* CodevatorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodevatorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CDA8BE60D9BD7D0FC38E1F42 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F55382C64FF616949FB4C6A4 /* CoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
+		FD00CC8C2807081099B1A8BB /* CodevatorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodevatorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		016A09D3D7B3B61B38BB1A26 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7C333F4B57ADE0BE0C52B72 /* Cocoa.framework in Frameworks */,
+				2918897A0A8EAD860FCF7E08 /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		62D240A433D4DB5ACF845ACA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B3A77A5CEE9A4D7867C74C29 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		714F3EF841C28BD966C2D85B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0BEBCA73935BD1C3CC636D /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3AD6FBF6A0F3381C95B45336 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				899978286CFEF443ADE99554 /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		4DDE9D92EECD611C491208F1 /* Codevator */ = {
+			isa = PBXGroup;
+			children = (
+				9DBB1E98FBC82A02E691E31C /* App.swift */,
+				B02CD488E55D34DF89FE5AC3 /* Core.swift */,
+				9D1FF2D668C8C08534CC3395 /* Sessions.swift */,
+				0D665E777445D8E19D37B31F /* Workspace.swift */,
+				CDA8BE60D9BD7D0FC38E1F42 /* Assets.xcassets */,
+				0929055E9182D8934224540E /* AppIcon.icns */,
+			);
+			name = Codevator;
+			path = Codevator;
+			sourceTree = "<group>";
+		};
+		831CB2E47452864B40378B26 /* CodevatorUITests */ = {
+			isa = PBXGroup;
+			children = (
+				5A456C518E486F47DD34DF53 /* TerminalEditingUITests.swift */,
+			);
+			name = CodevatorUITests;
+			path = CodevatorUITests;
+			sourceTree = "<group>";
+		};
+		899978286CFEF443ADE99554 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				721F7205DE083A8BBBCD2F0C /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		94EE6623117D8B8FD4919003 = {
+			isa = PBXGroup;
+			children = (
+				B467717F20C92DA6DF50C687 /* Products */,
+				3AD6FBF6A0F3381C95B45336 /* Frameworks */,
+				4DDE9D92EECD611C491208F1 /* Codevator */,
+				9A553D397F8CE44995CE8E33 /* CodevatorTests */,
+				831CB2E47452864B40378B26 /* CodevatorUITests */,
+			);
+			sourceTree = "<group>";
+		};
+		9A553D397F8CE44995CE8E33 /* CodevatorTests */ = {
+			isa = PBXGroup;
+			children = (
+				F55382C64FF616949FB4C6A4 /* CoreTests.swift */,
+				3EE0C04BD0BE3573CF3A105B /* SessionTests.swift */,
+			);
+			name = CodevatorTests;
+			path = CodevatorTests;
+			sourceTree = "<group>";
+		};
+		B467717F20C92DA6DF50C687 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				205DBCCE8962F7DB71AE1769 /* Codevator.app */,
+				FD00CC8C2807081099B1A8BB /* CodevatorTests.xctest */,
+				B732612FB0B6615718337F4D /* CodevatorUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4198D31CF46E472B4989A8A9 /* CodevatorUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1CA70E0D3B4CCA489A28294 /* Build configuration list for PBXNativeTarget "CodevatorUITests" */;
+			buildPhases = (
+				955B16F227809AADD98FB6DC /* Sources */,
+				714F3EF841C28BD966C2D85B /* Frameworks */,
+				F5E901387DE3E3C9643348F9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F4C630A8E23EAA9E5B1E6BFE /* PBXTargetDependency */,
+			);
+			name = CodevatorUITests;
+			productName = CodevatorUITests;
+			productReference = B732612FB0B6615718337F4D /* CodevatorUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		5AC66EDE157D821483681999 /* Codevator */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ECC668255ACE05A6E5A25FA2 /* Build configuration list for PBXNativeTarget "Codevator" */;
+			buildPhases = (
+				2D3E5743666BCA203BF78628 /* Sources */,
+				016A09D3D7B3B61B38BB1A26 /* Frameworks */,
+				09DEDA92B8C812D4415DE4F0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Codevator;
+			packageProductDependencies = (
+				ED2C3372BB99D11B137A086E /* SwiftTerm */,
+			);
+			productName = Codevator;
+			productReference = 205DBCCE8962F7DB71AE1769 /* Codevator.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DBAEE9EE0833AE33BEAD13E6 /* CodevatorTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F8FD1172E2818740EE52EE45 /* Build configuration list for PBXNativeTarget "CodevatorTests" */;
+			buildPhases = (
+				A1C2665A30E1B0042906A904 /* Sources */,
+				62D240A433D4DB5ACF845ACA /* Frameworks */,
+				95961D94D9C3C9865A7B58BF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA84C724F86079A3CB72935A /* PBXTargetDependency */,
+			);
+			name = CodevatorTests;
+			productName = CodevatorTests;
+			productReference = FD00CC8C2807081099B1A8BB /* CodevatorTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0E7DAC8BB2D2F54FFA216B9E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 6828772E4E514562D5181366 /* Build configuration list for PBXProject "Codevator" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 94EE6623117D8B8FD4919003;
+			minimizedProjectReferenceProxies = 0;
+			packageReferences = (
+				6231B15C951031FBC025805E /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
+			preferredProjectObjectVersion = 100;
+			productRefGroup = B467717F20C92DA6DF50C687 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5AC66EDE157D821483681999 /* Codevator */,
+				DBAEE9EE0833AE33BEAD13E6 /* CodevatorTests */,
+				4198D31CF46E472B4989A8A9 /* CodevatorUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		09DEDA92B8C812D4415DE4F0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99EC892C80BD1ECCDC34A33E /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		95961D94D9C3C9865A7B58BF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F5E901387DE3E3C9643348F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2D3E5743666BCA203BF78628 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				050A52326F31F0AC1E259C9B /* App.swift in Sources */,
+				72EEBB8E38581DF91836B90E /* Core.swift in Sources */,
+				DF6D97C89FA027187B5B0506 /* Sessions.swift in Sources */,
+				81345251D8478E17B27DF2BE /* Workspace.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		955B16F227809AADD98FB6DC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ED52A82EB6DD4AB8E31B50B6 /* TerminalEditingUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1C2665A30E1B0042906A904 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				942BBF15D89CD61F183B8ACA /* CoreTests.swift in Sources */,
+				11FB8B8477520F33FF0F6C9C /* SessionTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DA84C724F86079A3CB72935A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Codevator;
+			target = 5AC66EDE157D821483681999 /* Codevator */;
+			targetProxy = 2142635711F9D4F9B86735A8 /* PBXContainerItemProxy */;
+		};
+		F4C630A8E23EAA9E5B1E6BFE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Codevator;
+			target = 5AC66EDE157D821483681999 /* Codevator */;
+			targetProxy = B65FD207E28015CFE3F3BA0F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		859F3635CF9720DB8CB53A53 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		87DB3A6512D679F46CA57E41 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.codeelevator.CodevatorUITests;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Codevator;
+			};
+			name = Release;
+		};
+		9482F7363C1C083EA03940D6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.codeelevator.CodevatorTests;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Codevator.app/Contents/MacOS/Codevator";
+			};
+			name = Release;
+		};
+		ACD71948BA6695F5BEBC0AF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B804FFDE04FE212488716B0D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Codevator/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Codevator;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.codeelevator.CodeElevator;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C44DB74804C523E94AB0FCAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.codeelevator.CodevatorTests;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Codevator.app/Contents/MacOS/Codevator";
+			};
+			name = Debug;
+		};
+		DA00481F5488B74E15AED363 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.codeelevator.CodevatorUITests;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Codevator;
+			};
+			name = Debug;
+		};
+		EB74A0C8B18306BF7C95054C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Codevator/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Codevator;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.codeelevator.CodeElevator;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		6828772E4E514562D5181366 /* Build configuration list for PBXProject "Codevator" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ACD71948BA6695F5BEBC0AF2 /* Debug */,
+				859F3635CF9720DB8CB53A53 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B1CA70E0D3B4CCA489A28294 /* Build configuration list for PBXNativeTarget "CodevatorUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87DB3A6512D679F46CA57E41 /* Release */,
+				DA00481F5488B74E15AED363 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ECC668255ACE05A6E5A25FA2 /* Build configuration list for PBXNativeTarget "Codevator" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB74A0C8B18306BF7C95054C /* Release */,
+				B804FFDE04FE212488716B0D /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F8FD1172E2818740EE52EE45 /* Build configuration list for PBXNativeTarget "CodevatorTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9482F7363C1C083EA03940D6 /* Release */,
+				C44DB74804C523E94AB0FCAD /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6231B15C951031FBC025805E /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.20.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		ED2C3372BB99D11B137A086E /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6231B15C951031FBC025805E /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 0E7DAC8BB2D2F54FFA216B9E /* Project object */;
+}

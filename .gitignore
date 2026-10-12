@@ -1,0 +1,14 @@
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# Local agent integrations and credentials
+.agents/
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.pem
