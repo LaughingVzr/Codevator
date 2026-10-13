@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 
 func tr(_ key: String) -> String { NSLocalizedString(key, comment: "") }
 
@@ -124,10 +125,11 @@ struct CodevatorApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     weak var workspace: Workspace?
     var relaunchAfterTermination = false
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         AppAppearance.apply(UserDefaults.standard.string(forKey: "appearance") ?? AppAppearance.system.rawValue)
         NotificationCenter.default.addObserver(self, selector: #selector(styleKeyWindow(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
@@ -167,6 +169,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", "sleep 1; /usr/bin/open -a \"$1\"", "codevator-relaunch", Bundle.main.bundleURL.path]
         try? process.run()
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 }
 
@@ -531,7 +539,7 @@ struct CreateWorktreeView: View {
 }
 
 private enum SettingsSection: Hashable {
-    case appearance, language, tools
+    case appearance, language, notifications, tools
 }
 
 struct AppSettingsView: View {
@@ -547,6 +555,8 @@ struct AppSettingsView: View {
                     .tag(SettingsSection.appearance)
                 Label("语言", systemImage: "character.bubble")
                     .tag(SettingsSection.language)
+                Label("通知", systemImage: "bell.badge")
+                    .tag(SettingsSection.notifications)
                 Label("编程工具", systemImage: "terminal")
                     .tag(SettingsSection.tools)
             }
@@ -560,6 +570,8 @@ struct AppSettingsView: View {
                     AppearanceSettings(appearance: $appearance)
                 case .language:
                     LanguageSettings(language: $language)
+                case .notifications:
+                    NotificationSettings()
                 case .tools:
                     CLISettings(workspace: workspace)
                 case nil:
@@ -571,6 +583,60 @@ struct AppSettingsView: View {
         .frame(minWidth: 700, minHeight: 400)
         .toolbarBackground(AppSurface.content(for: colorScheme), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
+    }
+}
+
+private struct NotificationSettings: View {
+    @State private var status: UNAuthorizationStatus?
+    @State private var soundEnabled = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("通知").font(.title2.weight(.semibold))
+            Text("Codex 或 Claude 完成回复后，在你查看其他窗口时提醒你。")
+                .foregroundStyle(.secondary)
+            if let status {
+                switch status {
+                case .authorized, .provisional:
+                    Label("通知已允许", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(soundEnabled ? "通知声音已开启。" : "通知声音已关闭，可在 macOS 系统设置中开启。")
+                        .foregroundStyle(.secondary)
+                case .notDetermined:
+                    Text("尚未允许通知。启动编程工具时会请求权限。")
+                        .foregroundStyle(.secondary)
+                    Button("允许通知") {
+                        Task {
+                            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                            await refresh()
+                        }
+                    }
+                default:
+                    Text("系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知和声音。")
+                        .foregroundStyle(.secondary)
+                }
+                if status != .notDetermined {
+                    Button("打开系统通知设置") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task { await refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await refresh() }
+        }
+    }
+
+    private func refresh() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        status = settings.authorizationStatus
+        soundEnabled = settings.soundSetting == .enabled
     }
 }
 

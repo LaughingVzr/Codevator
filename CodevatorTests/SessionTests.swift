@@ -156,7 +156,20 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(command.first, "/bin/sh")
         var completed = 0
         codex.onTurnCompleted = { completed += 1 }
-        try Data("x".utf8).write(to: URL(fileURLWithPath: marker))
+        func invokeHook(_ event: String) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: try XCTUnwrap(command.first))
+            process.arguments = Array(command.dropFirst()) + [event]
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+        }
+        try invokeHook(#"{"type":"approval-requested","input-messages":["Review code"]}"#)
+        try invokeHook(#"{"type":"agent-turn-complete","input-messages":["Generate a concise, single-line task title for this task"],"last-assistant-message":"{\"title\":\"Review code\"}"#)
+        codex.checkCompletions()
+        XCTAssertEqual(completed, 0)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: marker)).count, 0)
+        try invokeHook(#"{"type":"agent-turn-complete","input-messages":["Review code"],"last-assistant-message":"Done"}"#)
         codex.checkCompletions()
         codex.checkCompletions()
         XCTAssertEqual(completed, 1)

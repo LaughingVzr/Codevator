@@ -175,7 +175,18 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         if provider == .codex {
             // Codex appends its event JSON as the final argument. The hook only
             // writes a fixed marker; prompts and responses never leave the CLI.
-            let argv = ["/bin/sh", "-c", "umask 077; printf x >> \"$0\"", completionFile.path]
+            let script = """
+            umask 077
+            case "$1" in
+              *'"type":"agent-turn-complete"'*) ;;
+              *) exit 0 ;;
+            esac
+            case "$1" in
+              *'"input-messages":["Generate a concise, single-line task title'*) exit 0 ;;
+            esac
+            printf x >> "$0"
+            """
+            let argv = ["/bin/sh", "-c", script, completionFile.path]
             guard let data = try? JSONSerialization.data(withJSONObject: argv, options: [.withoutEscapingSlashes]),
                   let value = String(data: data, encoding: .utf8) else { return [] }
             return ["-c", "notify=" + value]

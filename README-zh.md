@@ -14,7 +14,7 @@ Codevator 帮你在不同的编程任务间切换，又不必担心找不到刚�
   <img src="docs/screenshots/codevator-ocean.png" alt="Codevator 的项目、worktree 和 Codex 对话界面" width="960" />
 </p>
 
-> Codevator 仍在持续开发中。你可以[下载最新预览版](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.1)，也可以自行构建。
+> Codevator 仍在持续开发中。你可以[下载最新预览版](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.2)，也可以自行构建。
 
 ## 可以用它做什么
 
@@ -28,7 +28,7 @@ Codevator 使用你 Mac 上已安装的编程工具，不随应用附带 Codex �
 
 需要 macOS 14 或更新版本及 Git。如果要使用编程对话，还需要自行安装 Codex 或 Claude Code。下载的应用尚未签名和经过 Apple 公证，macOS 在首次打开时可能要求你确认。自行构建还需要 Xcode。
 
-1. 从[发布页面](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.1)下载 `Codevator-0.1.1-macOS.dmg`，打开后将 Codevator 拖入「应用程序」。如果想自行构建，克隆本仓库，用 Xcode 打开 `Codevator.xcodeproj`，选择 **Codevator** 和 **My Mac**，点击 **Run**。
+1. 从[发布页面](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.2)下载 `Codevator-0.1.2-macOS.dmg`，打开后将 Codevator 拖入「应用程序」。如果想自行构建，克隆本仓库，用 Xcode 打开 `Codevator.xcodeproj`，选择 **Codevator** 和 **My Mac**，点击 **Run**。
 2. 在应用侧边栏点击 **+**（或按 **⌘O**），选择本机已有的 Git 项目。
 3. 选中一个 worktree，点击 **Codex** 或 **Claude** 开始新标签。也可以先开空白标签，再选择工具。
 

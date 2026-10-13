@@ -128,6 +128,7 @@ final class Workspace: ObservableObject {
     func startSession(_ tree: Worktree, tabID: String, provider: CLIProvider) async {
         do {
             guard !tree.unavailable, !busy.contains(tree.projectID) else { throw WorkspaceError(tr("工作目录不可用或正在修改")) }
+            CompletionNotifier.prepare()
             let actual = try await git.register(tree.path)
             guard actual.id == tree.projectID, !busy.contains(tree.projectID),
                   configuration.projects.contains(where: { $0.id == tree.projectID }) else {
@@ -196,22 +197,38 @@ final class Workspace: ObservableObject {
     }
 }
 
+@MainActor
 private enum CompletionNotifier {
+    private static var authorizationTask: Task<Void, Never>?
+
+    static func prepare() {
+        #if DEBUG
+        // Automated tests must not interrupt the terminal with a system permission dialog.
+        if ProcessInfo.processInfo.environment["CODEVATOR_UI_TEST_CONFIG"] != nil || NSClassFromString("XCTestCase") != nil { return }
+        #endif
+        guard authorizationTask == nil else { return }
+        authorizationTask = Task {
+            let center = UNUserNotificationCenter.current()
+            guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
+            _ = try? await center.requestAuthorization(options: [.alert, .sound])
+        }
+    }
+
     static func post(title: String, body: String, tabID: String) {
+        prepare()
         Task {
+            await authorizationTask?.value
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
-            let authorized: Bool
             switch settings.authorizationStatus {
-            case .authorized, .provisional: authorized = true
-            case .notDetermined: authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-            default: authorized = false
+            case .authorized, .provisional: break
+            default: return
             }
-            guard authorized else { return }
             let content = UNMutableNotificationContent()
             content.title = title; content.body = body; content.sound = .default
             let request = UNNotificationRequest(identifier: "codevator-" + tabID + "-" + UUID().uuidString, content: content, trigger: nil)
-            try? await center.add(request)
+            do { try await center.add(request) }
+            catch { NSLog("Codevator could not deliver a completion notification: %@", error.localizedDescription) }
         }
     }
 }

@@ -67,6 +67,15 @@
 " 绝对路径（留空自动检测）" = " absolute path (leave blank to detect automatically)";
 "重新检测 CLI" = "Detect CLIs Again";
 "%@ 回复已完成" = "%@ response complete";
+"通知" = "Notifications";
+"Codex 或 Claude 完成回复后，在你查看其他窗口时提醒你。" = "Get notified when Codex or Claude finishes while you are in another window.";
+"通知已允许" = "Notifications allowed";
+"通知声音已开启。" = "Notification sounds are on.";
+"通知声音已关闭，可在 macOS 系统设置中开启。" = "Notification sounds are off. You can turn them on in macOS System Settings.";
+"尚未允许通知。启动编程工具时会请求权限。" = "Notifications have not been allowed yet. You will be asked when you start a coding tool.";
+"允许通知" = "Allow Notifications";
+"系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知和声音。" = "Notifications are off. Open macOS System Settings → Notifications → Codevator to enable alerts and sounds.";
+"打开系统通知设置" = "Open Notification Settings";
 "配置读取失败，原文件已保留：%@\n%@" = "Could not read configuration; original file preserved: %@\n%@";
 "请先停止所有运行会话，再重置配置" = "Stop all running sessions before resetting configuration";
 "选择已有 Git 项目" = "Choose an Existing Git Project";

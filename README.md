@@ -14,7 +14,7 @@ Codevator helps you move between coding tasks without losing your place. Keep yo
   <img src="docs/screenshots/codevator-ocean.png" alt="Codevator with sample projects, worktrees, and a Codex conversation" width="960" />
 </p>
 
-> Codevator is in active development. [Download the latest preview](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.1) or build it from source.
+> Codevator is in active development. [Download the latest preview](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.2) or build it from source.
 
 ## What you can do
 
@@ -28,7 +28,7 @@ Codevator runs the coding tools installed on your Mac. It does not include Codex
 
 You'll need macOS 14 or later and Git. Install Codex or Claude Code separately if you want to use it in Codevator. The downloadable app is unsigned and has not been notarized by Apple, so macOS may ask you to review it before opening. Building from source also requires Xcode.
 
-1. Download `Codevator-0.1.1-macOS.dmg` from the [release page](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.1), open it, and drag Codevator to Applications. To build it yourself, clone this repository, open `Codevator.xcodeproj` in Xcode, select the **Codevator** scheme and **My Mac**, then click **Run**.
+1. Download `Codevator-0.1.2-macOS.dmg` from the [release page](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.2), open it, and drag Codevator to Applications. To build it yourself, clone this repository, open `Codevator.xcodeproj` in Xcode, select the **Codevator** scheme and **My Mac**, then click **Run**.
 2. In the app, click **+** in the sidebar (or press **⌘O**) and choose a local Git project.
 3. Select a worktree and click **Codex** or **Claude** to start a tab. You can also create a blank tab first and choose a tool later.
 
