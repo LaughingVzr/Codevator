@@ -14,6 +14,7 @@
 		81345251D8478E17B27DF2BE /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D665E777445D8E19D37B31F /* Workspace.swift */; };
 		942BBF15D89CD61F183B8ACA /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F55382C64FF616949FB4C6A4 /* CoreTests.swift */; };
 		99EC892C80BD1ECCDC34A33E /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 0929055E9182D8934224540E /* AppIcon.icns */; };
+		A50E1A100000000000000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A50E1A100000000000000004 /* Localizable.strings */; };
 		B3A77A5CEE9A4D7867C74C29 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 721F7205DE083A8BBBCD2F0C /* Cocoa.framework */; };
 		BF0BEBCA73935BD1C3CC636D /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 721F7205DE083A8BBBCD2F0C /* Cocoa.framework */; };
 		DF6D97C89FA027187B5B0506 /* Sessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1FF2D668C8C08534CC3395 /* Sessions.swift */; };
@@ -40,6 +41,8 @@
 
 /* Begin PBXFileReference section */
 		0929055E9182D8934224540E /* AppIcon.icns */ = {isa = PBXFileReference; includeInIndex = 1; path = AppIcon.icns; sourceTree = "<group>"; };
+		A50E1A100000000000000002 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A50E1A100000000000000003 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		0D665E777445D8E19D37B31F /* Workspace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		205DBCCE8962F7DB71AE1769 /* Codevator.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codevator.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3EE0C04BD0BE3573CF3A105B /* SessionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
@@ -100,6 +103,7 @@
 				0D665E777445D8E19D37B31F /* Workspace.swift */,
 				CDA8BE60D9BD7D0FC38E1F42 /* Assets.xcassets */,
 				0929055E9182D8934224540E /* AppIcon.icns */,
+				A50E1A100000000000000004 /* Localizable.strings */,
 			);
 			name = Codevator;
 			path = Codevator;
@@ -223,10 +227,11 @@
 			};
 			buildConfigurationList = 6828772E4E514562D5181366 /* Build configuration list for PBXProject "Codevator" */;
 			compatibilityVersion = "Xcode 3.2";
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 94EE6623117D8B8FD4919003;
@@ -252,6 +257,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				99EC892C80BD1ECCDC34A33E /* AppIcon.icns in Resources */,
+				A50E1A100000000000000001 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -316,6 +322,18 @@
 			targetProxy = B65FD207E28015CFE3F3BA0F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		A50E1A100000000000000004 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A50E1A100000000000000002 /* en */,
+				A50E1A100000000000000003 /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		859F3635CF9720DB8CB53A53 /* Release */ = {

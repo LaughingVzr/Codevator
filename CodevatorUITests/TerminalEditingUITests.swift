@@ -2,12 +2,49 @@ import XCTest
 import AppKit
 
 final class TerminalEditingUITests: XCTestCase {
+    func testMultipleTabsAndBlankTabSelection() throws {
+        continueAfterFailure = false
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("CodevatorTabsUI-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = repository.appendingPathComponent(".build/ui-fixtures/Project-A").path
+        guard FileManager.default.fileExists(atPath: fixture + "/.git") else { throw XCTSkip("Requires disposable Git fixture") }
+        let config = folder.appendingPathComponent("workspace.json")
+        let common = fixture + "/.git"
+        let data: [String: Any] = ["schemaVersion": 1, "projects": [["id": common, "name": "UI Test", "directory": fixture, "expanded": true]], "selection": common + "\n" + fixture, "cliPaths": ["codex": "/bin/cat", "claude": "/bin/cat"]]
+        try JSONSerialization.data(withJSONObject: data).write(to: config)
+        let app = XCUIApplication()
+        app.launchEnvironment["CODEVATOR_UI_TEST_CONFIG"] = config.path
+        app.launch()
+        addTeardownBlock { app.terminate() }
+        focus(app)
+        let codex = app.buttons["新建 Codex 标签"]
+        XCTAssertTrue(codex.waitForExistence(timeout: 20))
+        codex.click()
+        XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 20))
+        app.buttons["新建 Claude 标签"].click()
+        XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 20))
+        XCTAssertEqual(app.buttons.matching(identifier: "Codex 标签").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "Claude 标签").count, 1)
+        app.buttons["停止"].click()
+        app.buttons["关闭 Claude 标签"].click()
+        XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 10))
+        app.buttons["新建空白标签"].click()
+        XCTAssertTrue(app.buttons["新标签 标签"].waitForExistence(timeout: 10))
+        app.buttons["Claude"].click()
+        XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 20))
+        app.buttons["停止"].click()
+        app.buttons["Codex 标签"].click()
+        app.buttons["停止"].click()
+    }
+
     func testRealCodexUnicodeCopyAndPaste() throws {
         try verifyEditing(provider: "Codex", executable: "/opt/homebrew/bin/codex", readyText: "Ask Codex")
     }
 
-    func testRealKsccUnicodeCopyAndPaste() throws {
-        try verifyEditing(provider: "Claude", executable: "/opt/homebrew/bin/kscc", readyText: "for shortcuts")
+    func testRealClaudeUnicodeCopyAndPaste() throws {
+        try verifyEditing(provider: "Claude", executable: "/opt/homebrew/bin/claude", readyText: "for shortcuts")
     }
 
     private func verifyEditing(provider: String, executable: String, readyText: String) throws {
@@ -42,9 +79,8 @@ final class TerminalEditingUITests: XCTestCase {
             if !stopped, app.buttons["停止"].exists { app.buttons["停止"].click() }
             app.terminate()
         }
-        let start = app.buttons["启动"]
+        let start = app.buttons["新建 \(provider) 标签"]
         XCTAssertTrue(start.waitForExistence(timeout: 20))
-        app.radioButtons[provider].click()
         start.click()
         let terminal = app.textViews[provider + " 终端"]
         XCTAssertTrue(terminal.waitForExistence(timeout: 30))

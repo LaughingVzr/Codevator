@@ -54,6 +54,36 @@ final class CoreTests: XCTestCase {
         await expectError { _ = try await self.git.create(project, path: self.root.appendingPathComponent("bad-start").path, branch: "valid", newBranch: true, start: "does-not-exist") }
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: repository).appendingPathComponent("tracked")), Data("initial".utf8))
     }
+    func testWorktreeDisplayNamesFollowCheckoutLayout() {
+        let projectID = "/projects/repo/.git"
+        let main = Worktree(projectID: projectID, path: "/projects/repo", branch: "dev", isMain: true)
+        let nested = Worktree(projectID: projectID, path: "/worktrees/repo/light-glen/repo", branch: "feature")
+        let flat = Worktree(projectID: projectID, path: "/worktrees/repo-feature", branch: "feature")
+        XCTAssertEqual(main.displayName(projectName: "repo"), "main")
+        XCTAssertEqual(nested.displayName(projectName: "repo"), "light-glen")
+        XCTAssertEqual(flat.displayName(projectName: "repo"), "repo-feature")
+    }
+    func testAutomaticWorktreeLocationAndNameCollision() throws {
+        let project = Project(id: "/projects/repo/.git", name: "repo", directory: root.appendingPathComponent("repo").path)
+        let defaultRoot = root.appendingPathComponent("worktrees/repo").path
+        XCTAssertEqual(WorktreeLocation.suggestedRoot(project: project, trees: []), defaultRoot)
+        let linked = Worktree(projectID: project.id, path: root.appendingPathComponent("other/light-glen/repo").path)
+        let linkedRoot = root.appendingPathComponent("other").path
+        XCTAssertEqual(WorktreeLocation.suggestedRoot(project: project, trees: [linked]), linkedRoot)
+        XCTAssertEqual(WorktreeLocation.automaticName(branch: "feature/search", root: linkedRoot), "feature-search")
+        try FileManager.default.createDirectory(at: URL(fileURLWithPath: linkedRoot).appendingPathComponent("feature-search"), withIntermediateDirectories: true)
+        XCTAssertEqual(WorktreeLocation.automaticName(branch: "feature/search", root: linkedRoot), "feature-search-2")
+        XCTAssertEqual(WorktreeLocation.path(root: linkedRoot, name: "feature-search-2", projectName: "repo"), root.appendingPathComponent("other/feature-search-2/repo").path)
+        let generated = WorktreeLocation.randomName(root: linkedRoot, reservedNames: ["main"])
+        let words = generated.split(separator: "-")
+        XCTAssertEqual(words.count, 2)
+        XCTAssertTrue(words.allSatisfy { $0.allSatisfy(\.isLetter) })
+        XCTAssertNotEqual(generated, WorktreeLocation.randomName(root: linkedRoot, excluding: [generated]))
+        XCTAssertEqual(WorktreeLocation.availableName(base: generated, root: linkedRoot, reservedNames: [generated]), generated + "-2")
+        XCTAssertTrue(WorktreeLocation.validName("中文-worktree"))
+        XCTAssertFalse(WorktreeLocation.validName("../outside"))
+        XCTAssertFalse(WorktreeLocation.validName(" name "))
+    }
     func testRemovalProtectionAndBranchPreservation() async throws {
         let project = try await setupRepository()
         let list = try await git.create(project, path: root.appendingPathComponent("feature").path, branch: "feature", newBranch: true, start: "HEAD")
@@ -142,10 +172,11 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(created)
         let tree = try XCTUnwrap(workspace.selectedTree)
         workspace.configuration.cliPaths["codex"] = "/bin/cat"
-        await workspace.startSession(tree, provider: .codex)
+        await workspace.openSession(tree, provider: .codex)
+        let tabID = try XCTUnwrap(workspace.sessions.selectedTab(for: tree.id)?.id)
         await workspace.removeTree(tree, project: project)
         XCTAssertTrue(FileManager.default.fileExists(atPath: path)); XCTAssertTrue(displayedPath.isEmpty)
-        await workspace.sessions.stop(tree.id)
+        await workspace.sessions.stop(tabID)
         await workspace.removeTree(tree, project: project)
         XCTAssertTrue(displayedPath.contains(path)); XCTAssertTrue(FileManager.default.fileExists(atPath: path))
         accept = true
@@ -159,9 +190,9 @@ final class CoreTests: XCTestCase {
         let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("config.json")), confirmation: { _, _, _ in accept })
         await workspace.add(repository)
         let tree = try XCTUnwrap(workspace.selectedTree)
-        await workspace.sessions.start(tree, provider: .codex, override: "/bin/cat")
+        let tabID = await workspace.sessions.start(tree, provider: .codex, override: "/bin/cat")
         await workspace.removeProject(project)
-        XCTAssertEqual(workspace.configuration.projects.count, 1); XCTAssertTrue(workspace.sessions.sessions[tree.id]?.active == true)
+        XCTAssertEqual(workspace.configuration.projects.count, 1); XCTAssertTrue(workspace.sessions.sessions[tabID]?.active == true)
         accept = true; await workspace.removeProject(project)
         XCTAssertTrue(workspace.configuration.projects.isEmpty); XCTAssertTrue(workspace.sessions.sessions.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: repository))
@@ -175,19 +206,20 @@ final class CoreTests: XCTestCase {
         let path = root.appendingPathComponent("feature").path
         _ = await workspace.create(project, path: path, branch: "feature", newBranch: true, start: "HEAD")
         let tree = try XCTUnwrap(workspace.selectedTree)
-        await workspace.startSession(tree, provider: .codex)
-        let session = try XCTUnwrap(workspace.sessions.sessions[tree.id])
+        await workspace.openSession(tree, provider: .codex)
+        let tabID = try XCTUnwrap(workspace.sessions.selectedTab(for: tree.id)?.id)
+        let session = try XCTUnwrap(workspace.sessions.sessions[tabID])
         let firstPid = session.terminal.process.shellPid
         workspace.selection = workspace.trees[project.id]?.first?.id
         workspace.selection = tree.id
-        XCTAssertEqual(workspace.sessions.sessions[tree.id]?.terminal.process.shellPid, firstPid)
+        XCTAssertEqual(workspace.sessions.sessions[tabID]?.terminal.process.shellPid, firstPid)
         let cancelled = await workspace.prepareToExit()
         XCTAssertFalse(cancelled); XCTAssertTrue(session.active); XCTAssertFalse(workspace.sessions.isClosing)
         XCTAssertTrue(message.contains(path))
         _ = try await git.command(repository, ["worktree", "remove", path])
         await workspace.refreshAll()
         XCTAssertTrue(workspace.selectedTree?.unavailable == true)
-        await workspace.startSession(tree, provider: .claude)
+        await workspace.openSession(tree, provider: .claude)
         XCTAssertNotNil(workspace.error); XCTAssertTrue(session.active)
         accept = true; let confirmed = await workspace.prepareToExit()
         XCTAssertTrue(confirmed); XCTAssertFalse(session.active); XCTAssertTrue(workspace.sessions.isClosing)
@@ -199,7 +231,7 @@ final class CoreTests: XCTestCase {
         do { _ = try await task.value; XCTFail("Cancellation must reject") } catch {}
         XCTAssertLessThan(Date().timeIntervalSince(start), 2)
     }
-    @MainActor func testProviderSelectionAtStartAndWorktreeIsolation() async throws {
+    @MainActor func testTabSelectionAndWorktreeIsolation() async throws {
         let project = try await setupRepository()
         let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("config.json")))
         await workspace.add(repository)
@@ -207,12 +239,18 @@ final class CoreTests: XCTestCase {
         _ = await workspace.create(project, path: root.appendingPathComponent("other").path, branch: "other", newBranch: true, start: "HEAD")
         let other = try XCTUnwrap(workspace.selectedTree)
         workspace.configuration.cliPaths = ["codex": "/bin/cat", "claude": "/bin/cat"]
-        workspace.providerSelection(main).wrappedValue = .claude
-        XCTAssertEqual(workspace.providerSelection(other).wrappedValue, .codex)
-        await workspace.startSession(main)
-        XCTAssertEqual(workspace.sessions.sessions[main.id]?.provider, .claude)
-        workspace.selectedProviders[main.id] = .codex
-        XCTAssertEqual(workspace.providerSelection(main).wrappedValue, .claude)
+        let blank = workspace.sessions.createTab(for: main.id)
+        XCTAssertNil(workspace.sessions.selectedTab(for: other.id))
+        await workspace.startSession(main, tabID: blank.id, provider: .claude)
+        XCTAssertEqual(workspace.sessions.sessions[blank.id]?.provider, .claude)
+        let second = workspace.sessions.createTab(for: main.id)
+        XCTAssertEqual(workspace.sessions.selectedTab(for: main.id)?.id, second.id)
+        workspace.selection = main.id
+        workspace.sessions.markUnread(blank.id)
+        workspace.selectTab(blank.id, in: main.id)
+        XCTAssertEqual(workspace.sessions.selectedTab(for: main.id)?.provider, .claude)
+        XCTAssertEqual(workspace.sessions.unreadCount(in: main.id), 0)
+        XCTAssertNil(workspace.sessions.selectedTab(for: other.id))
         await workspace.sessions.stopAll()
     }
 }

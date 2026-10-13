@@ -103,10 +103,14 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     let path: String
     let provider: CLIProvider
     let terminal: LocalProcessTerminalView
-    @Published var state = "启动中"
+    @Published var state = tr("启动中")
     @Published var active = true
     @Published var stopping = false
     private(set) var processGroup: pid_t = 0
+    private let completionFile = FileManager.default.temporaryDirectory.appendingPathComponent("codevator-complete-" + UUID().uuidString)
+    private var completionTimer: Timer?
+    private var completionLength: UInt64 = 0
+    var onTurnCompleted: (() -> Void)?
     var hasManagedProcesses: Bool { active || stopping || (processGroup > 0 && kill(-processGroup, 0) == 0) }
 
     init(tree: Worktree, provider: CLIProvider) {
@@ -114,9 +118,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         terminal = AccessibleTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), font: .monospacedSystemFont(ofSize: 13, weight: .regular), options: TerminalOptions(scrollback: 5000))
         terminal.setAccessibilityElement(true)
         terminal.setAccessibilityRole(.textArea)
-        terminal.setAccessibilityLabel(provider.title + " 终端")
-        let editingMenu = NSMenu(title: "终端")
-        for (title, action) in [("复制", #selector(TerminalView.copy(_:))), ("粘贴", #selector(TerminalView.paste(_:)))] {
+        terminal.setAccessibilityLabel(provider.title + tr(" 终端"))
+        let editingMenu = NSMenu(title: tr("终端"))
+        for (title, action) in [(tr("复制"), #selector(TerminalView.copy(_:))), (tr("粘贴"), #selector(TerminalView.paste(_:)))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = terminal
             editingMenu.addItem(item)
@@ -131,16 +135,57 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         guard active, !stopping else { return }
         terminal.startProcess(executable: executable, args: args, environment: environment.map { "\($0.key)=\($0.value)" }, currentDirectory: path)
         let pid = terminal.process.shellPid
-        guard terminal.process.running, pid > 0 else { active = false; state = "失败：无法创建 PTY 进程"; return }
+        guard terminal.process.running, pid > 0 else { active = false; state = tr("失败：无法创建 PTY 进程"); return }
         // forkpty establishes a new session/group in the child. getpgid queried
         // immediately in the parent races that setup, so retain the known group ID.
         processGroup = pid
-        state = "运行中"
+        state = tr("运行中")
     }
-    func fail(_ message: String) { active = false; state = "失败：" + message }
+    func completionArguments(for executable: String) -> [String] {
+        let name = URL(fileURLWithPath: executable).lastPathComponent
+        guard (provider == .codex && name == "codex") ||
+              (provider == .claude && name == "claude") else { return [] }
+        guard FileManager.default.createFile(atPath: completionFile.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { return [] }
+        if provider == .codex {
+            // Codex appends its event JSON as the final argument. The hook only
+            // writes a fixed marker; prompts and responses never leave the CLI.
+            let argv = ["/bin/sh", "-c", "umask 077; printf x >> \"$0\"", completionFile.path]
+            guard let data = try? JSONSerialization.data(withJSONObject: argv, options: [.withoutEscapingSlashes]),
+                  let value = String(data: data, encoding: .utf8) else { return [] }
+            return ["-c", "notify=" + value]
+        }
+        let quotedPath = "'" + completionFile.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let settings: [String: Any] = ["hooks": ["Stop": [["hooks": [["type": "command", "command": "umask 077; printf x >> " + quotedPath]]]]]]
+        guard let data = try? JSONSerialization.data(withJSONObject: settings),
+              let value = String(data: data, encoding: .utf8) else { return [] }
+        return ["--settings", value]
+    }
+    func monitorCompletions() {
+        completionTimer?.invalidate()
+        completionLength = 0
+        completionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkCompletions() }
+        }
+    }
+    func checkCompletions() {
+        guard active, !stopping,
+              let size = (try? FileManager.default.attributesOfItem(atPath: completionFile.path)[.size]) as? NSNumber else { return }
+        let length = size.uint64Value
+        guard length > completionLength else { return }
+        completionLength = length
+        onTurnCompleted?()
+    }
+    private func stopCompletionMonitor() {
+        completionTimer?.invalidate(); completionTimer = nil
+        try? FileManager.default.removeItem(at: completionFile)
+    }
+    func fail(_ message: String) { stopCompletionMonitor(); active = false; state = tr("失败：") + message }
     func stop() async {
-        guard !stopping else { return }
-        stopping = true; state = "正在停止"
+        if stopping {
+            while stopping { try? await Task.sleep(nanoseconds: 20_000_000) }
+            return
+        }
+        stopping = true; state = tr("正在停止")
         let pid = terminal.process.shellPid
         let group = processGroup
         if group > 0 {
@@ -159,18 +204,21 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         else if pid > 0, terminal.process.running { kill(pid, SIGKILL) }
         for _ in 0..<50 where terminal.process.running { try? await Task.sleep(nanoseconds: 20_000_000) }
         if terminal.process.running { terminal.terminate() }
-        processGroup = 0; active = false; stopping = false; state = "已停止"
+        stopCompletionMonitor()
+        processGroup = 0; active = false; stopping = false; state = tr("已停止")
     }
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     func processTerminated(source: TerminalView, exitCode: Int32?) {
+        checkCompletions()
+        stopCompletionMonitor()
         active = false
         if !stopping {
             if let status = exitCode {
                 let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
-                state = "已退出（\(code)）"
-            } else { state = "失败：进程退出状态不可用" }
+                state = String(format: tr("已退出（%d）"), code)
+            } else { state = tr("失败：进程退出状态不可用") }
             // Reap any children left in the session group promptly, rather than
             // retaining a stale group ID until a much later restart.
             let group = processGroup
@@ -187,32 +235,98 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
 
 @MainActor
 final class SessionManager: ObservableObject {
+    struct Tab: Identifiable, Equatable {
+        let id: String
+        let treeID: String
+        var provider: CLIProvider?
+        init(treeID: String, provider: CLIProvider? = nil) {
+            id = UUID().uuidString; self.treeID = treeID; self.provider = provider
+        }
+    }
+    @Published private(set) var tabsByTree: [String: [Tab]] = [:]
+    @Published private(set) var selectedTabIDs: [String: String] = [:]
     @Published var sessions: [String: TerminalSession] = [:]
+    @Published private(set) var unreadCompletions: Set<String> = []
+    var onTurnCompleted: ((String, TerminalSession) -> Void)?
     let resolver = CLIResolver()
     private var observations: [String: AnyCancellable] = [:]
     private var starting: Set<String> = []
+    private var closing: Set<String> = []
     var isClosing = false
-    func start(_ tree: Worktree, provider: CLIProvider, override: String?) async {
-        guard !isClosing else { return }
-        if sessions[tree.id]?.active == true || sessions[tree.id]?.stopping == true || !starting.insert(tree.id).inserted { return }
-        defer { starting.remove(tree.id) }
-        if let previous = sessions[tree.id] { await previous.stop() }
-        guard !isClosing else { return }
+    func tabs(for treeID: String) -> [Tab] { tabsByTree[treeID] ?? [] }
+    func selectedTab(for treeID: String) -> Tab? {
+        tabs(for: treeID).first { $0.id == selectedTabIDs[treeID] }
+    }
+    @discardableResult func createTab(for treeID: String, provider: CLIProvider? = nil) -> Tab {
+        let tab = Tab(treeID: treeID, provider: provider)
+        tabsByTree[treeID, default: []].append(tab)
+        selectedTabIDs[treeID] = tab.id
+        return tab
+    }
+    func select(_ tabID: String, in treeID: String) {
+        guard tabs(for: treeID).contains(where: { $0.id == tabID }) else { return }
+        selectedTabIDs[treeID] = tabID
+    }
+    func start(_ tree: Worktree, tabID: String, provider: CLIProvider, override: String?) async {
+        guard !isClosing, !closing.contains(tabID),
+              tabs(for: tree.id).contains(where: { $0.id == tabID }) else { return }
+        if sessions[tabID]?.active == true || sessions[tabID]?.stopping == true || !starting.insert(tabID).inserted { return }
+        defer { starting.remove(tabID) }
+        if let previous = sessions[tabID] { await previous.stop() }
+        guard !isClosing, !closing.contains(tabID),
+              let index = tabsByTree[tree.id]?.firstIndex(where: { $0.id == tabID }) else { return }
+        tabsByTree[tree.id]?[index].provider = provider
         let session = TerminalSession(tree: tree, provider: provider)
-        sessions[tree.id] = session
-        observations[tree.id] = session.objectWillChange.sink { [weak self] in
+        session.onTurnCompleted = { [weak self, weak session] in
+            guard let self, let session, self.sessions[tabID] === session else { return }
+            self.onTurnCompleted?(tabID, session)
+        }
+        sessions[tabID] = session
+        observations[tabID] = session.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.objectWillChange.send() }
         }
         do {
-            guard !tree.unavailable, FileManager.default.fileExists(atPath: tree.path) else { throw WorkspaceError("工作目录不可用，请刷新") }
+            guard !tree.unavailable, FileManager.default.fileExists(atPath: tree.path) else { throw WorkspaceError(tr("工作目录不可用，请刷新")) }
             let (executable, env) = try await resolver.resolve(provider, override: override)
-            guard sessions[tree.id] === session, session.active else { return }
-            session.launch(executable: executable, environment: env)
+            guard !isClosing, !closing.contains(tabID), sessions[tabID] === session, session.active else { return }
+            let arguments = session.completionArguments(for: executable)
+            session.launch(executable: executable, environment: env, args: arguments)
+            if !arguments.isEmpty, session.active { session.monitorCompletions() }
         } catch { if session.active { session.fail(error.localizedDescription) } }
     }
-    func stop(_ id: String) async { await sessions[id]?.stop(); objectWillChange.send() }
-    func remove(_ id: String) async { await stop(id); sessions.removeValue(forKey: id); observations.removeValue(forKey: id) }
+    @discardableResult func start(_ tree: Worktree, provider: CLIProvider, override: String?) async -> String {
+        let tab = selectedTab(for: tree.id) ?? createTab(for: tree.id)
+        await start(tree, tabID: tab.id, provider: provider, override: override)
+        return tab.id
+    }
+    func stop(_ tabID: String) async { await sessions[tabID]?.stop(); objectWillChange.send() }
+    func markUnread(_ tabID: String) { unreadCompletions.insert(tabID) }
+    func markRead(_ tabID: String) { unreadCompletions.remove(tabID) }
+    func unreadCount(in treeID: String) -> Int { tabs(for: treeID).filter { unreadCompletions.contains($0.id) }.count }
+    func unreadCount(forProject projectID: String) -> Int {
+        tabsByTree.keys.filter { $0.hasPrefix(projectID + "\n") }.reduce(0) { $0 + unreadCount(in: $1) }
+    }
+    func close(_ tabID: String) async {
+        guard let treeID = tabsByTree.first(where: { $0.value.contains(where: { $0.id == tabID }) })?.key,
+              closing.insert(tabID).inserted else { return }
+        await stop(tabID)
+        unreadCompletions.remove(tabID)
+        sessions.removeValue(forKey: tabID); observations.removeValue(forKey: tabID)
+        let old = tabs(for: treeID)
+        guard let index = old.firstIndex(where: { $0.id == tabID }) else { closing.remove(tabID); return }
+        var remaining = old; remaining.remove(at: index)
+        if remaining.isEmpty { tabsByTree.removeValue(forKey: treeID); selectedTabIDs.removeValue(forKey: treeID) }
+        else {
+            tabsByTree[treeID] = remaining
+            if selectedTabIDs[treeID] == tabID { selectedTabIDs[treeID] = remaining[min(index, remaining.count - 1)].id }
+        }
+        closing.remove(tabID)
+    }
+    func remove(_ treeID: String) async {
+        for tab in tabs(for: treeID) { await close(tab.id) }
+    }
     func stopAll() async { for session in sessions.values { await session.stop() }; objectWillChange.send() }
+    func running(in treeID: String) -> [TerminalSession] { running.filter { $0.treeID == treeID } }
     var running: [TerminalSession] { sessions.values.filter { $0.hasManagedProcesses } }
 }
 
@@ -236,9 +350,20 @@ struct TerminalHost: NSViewRepresentable {
     func makeNSView(context: Context) -> TerminalContainerView {
         let container = TerminalContainerView()
         attach(to: container)
+        applyAppearance()
         return container
     }
-    func updateNSView(_ nsView: TerminalContainerView, context: Context) { attach(to: nsView) }
+    func updateNSView(_ nsView: TerminalContainerView, context: Context) {
+        attach(to: nsView)
+        applyAppearance()
+    }
+    private func applyAppearance() {
+        guard session.terminal.appearance?.name != .darkAqua else { return }
+        session.terminal.appearance = NSAppearance(named: .darkAqua)
+        session.terminal.nativeForegroundColor = NSColor(calibratedWhite: 0.9, alpha: 1)
+        session.terminal.nativeBackgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1)
+        session.terminal.needsDisplay = true
+    }
     private func attach(to container: TerminalContainerView) {
         guard session.terminal.superview !== container else { return }
         container.subviews.forEach { $0.removeFromSuperview() }

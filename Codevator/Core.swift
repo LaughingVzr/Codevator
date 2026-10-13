@@ -3,7 +3,7 @@ import Foundation
 struct WorkspaceError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
-    init(_ message: String) { self.message = message }
+    init(_ message: String) { self.message = tr(message) }
 }
 
 struct CommandResult {
@@ -43,7 +43,7 @@ enum CommandRunner {
                     for _ in 0..<20 where process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
                     if process.isRunning { kill(process.processIdentifier, SIGKILL) }
                     process.waitUntilExit()
-                    throw WorkspaceError("命令已取消或超时：\(executable)")
+                    throw WorkspaceError(String(format: tr("命令已取消或超时：%@"), executable))
                 }
                 Thread.sleep(forTimeInterval: 0.01)
             }
@@ -67,7 +67,68 @@ struct Worktree: Identifiable, Equatable {
     var unavailable = false
     var isMain = false
     var id: String { projectID + "\n" + path }
+    func displayName(projectName: String) -> String {
+        if isMain { return "main" }
+        let directory = URL(fileURLWithPath: path)
+        let name = directory.lastPathComponent
+        // Some tools place every checkout in a same-named repository directory.
+        // In that layout, the enclosing directory distinguishes the worktrees.
+        return name == projectName ? directory.deletingLastPathComponent().lastPathComponent : name
+    }
     var label: String { branch ?? "detached HEAD" }
+}
+
+enum WorktreeLocation {
+    private static let adjectives = [
+        "amber", "brisk", "calm", "clear", "distant", "early", "gentle", "golden",
+        "hollow", "lively", "lunar", "mellow", "open", "quiet", "silver", "steady",
+        "sunny", "swift", "tidal", "vivid", "warm", "wild", "young", "zenith"
+    ]
+    private static let nouns = [
+        "anchor", "arcade", "bridge", "canvas", "cedar", "cloud", "delta", "ember",
+        "forest", "garden", "harbor", "island", "meadow", "mirror", "orbit", "river",
+        "signal", "spark", "summit", "valley", "voyage", "willow", "window", "zephyr"
+    ]
+    static func suggestedRoot(project: Project, trees: [Worktree]) -> String {
+        if let nested = trees.first(where: { !$0.isMain && URL(fileURLWithPath: $0.path).lastPathComponent == project.name }) {
+            return URL(fileURLWithPath: nested.path).deletingLastPathComponent().deletingLastPathComponent().path
+        }
+        return URL(fileURLWithPath: project.directory).deletingLastPathComponent()
+            .appendingPathComponent("worktrees").appendingPathComponent(project.name).path
+    }
+    static func availableName(base: String, root: String, reservedNames: Set<String> = []) -> String {
+        func isTaken(_ name: String) -> Bool {
+            reservedNames.contains(name) || FileManager.default.fileExists(atPath: URL(fileURLWithPath: root).appendingPathComponent(name).path)
+        }
+        var candidate = base
+        var suffix = 2
+        while isTaken(candidate) {
+            candidate = "\(base)-\(suffix)"
+            suffix += 1
+        }
+        return candidate
+    }
+    static func automaticName(branch: String, root: String, reservedNames: Set<String> = []) -> String {
+        let base = branch.isEmpty ? "new-worktree" : branch.replacingOccurrences(of: "/", with: "-")
+        return availableName(base: base, root: root, reservedNames: reservedNames)
+    }
+    static func randomName(root: String, reservedNames: Set<String> = [], excluding: Set<String> = []) -> String {
+        let forbidden = reservedNames.union(excluding)
+        for _ in 0..<32 {
+            let name = "\(adjectives.randomElement()!)-\(nouns.randomElement()!)"
+            if !forbidden.contains(name) && !FileManager.default.fileExists(atPath: URL(fileURLWithPath: root).appendingPathComponent(name).path) {
+                return name
+            }
+        }
+        return availableName(base: "worktree-\(UUID().uuidString.prefix(6).lowercased())", root: root, reservedNames: forbidden)
+    }
+    static func validName(_ name: String) -> Bool {
+        !name.isEmpty && name == name.trimmingCharacters(in: .whitespacesAndNewlines) &&
+        name != "." && name != ".." && !name.contains("/") && !name.contains(":") && !name.contains("\0")
+    }
+    static func path(root: String, name: String, projectName: String) -> String {
+        URL(fileURLWithPath: root).appendingPathComponent(name).appendingPathComponent(projectName).path
+    }
 }
 
 struct WorkspaceConfiguration: Codable, Equatable {
@@ -90,7 +151,7 @@ struct ConfigurationStore {
     func load() throws -> WorkspaceConfiguration {
         guard FileManager.default.fileExists(atPath: file.path) else { return .init() }
         let config = try JSONDecoder().decode(WorkspaceConfiguration.self, from: Data(contentsOf: file))
-        guard config.schemaVersion == 1 else { throw WorkspaceError("不支持的配置版本，原文件已保留：\(file.path)") }
+        guard config.schemaVersion == 1 else { throw WorkspaceError(String(format: tr("不支持的配置版本，原文件已保留：%@"), file.path)) }
         return config
     }
     func save(_ config: WorkspaceConfiguration) throws {
@@ -170,7 +231,8 @@ actor GitService {
             let original = error.localizedDescription
             let remaining = (try? await worktrees(project)) ?? []
             let branchExists = (try? await branches(project))?.contains(branch) == true
-            throw WorkspaceError("\(original)\n状态已重新读取；目标目录\(FileManager.default.fileExists(atPath: path) ? "存在" : "不存在")，分支\(branchExists ? "存在" : "不存在")，共 \(remaining.count) 个 worktree。请检查残留内容。")
+            throw WorkspaceError(String(format: tr("%@\n状态已重新读取；目标目录%@，分支%@，共 %ld 个 worktree。请检查残留内容。"), original,
+                                        tr(FileManager.default.fileExists(atPath: path) ? "存在" : "不存在"), tr(branchExists ? "存在" : "不存在"), remaining.count))
         }
         return try await worktrees(project)
     }
@@ -224,7 +286,7 @@ actor CLIResolver {
             guard override.hasPrefix("/") else { throw WorkspaceError("CLI 路径必须为绝对路径") }
             paths = [override]
         } else { paths = (env["PATH"] ?? "").split(separator: ":").map { String($0) + "/" + provider.rawValue } }
-        guard let executable = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) && !((try? URL(fileURLWithPath: $0).resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }) else { throw WorkspaceError("找不到可执行的 \(provider.title)，请安装后重新检测或设置绝对路径") }
+        guard let executable = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) && !((try? URL(fileURLWithPath: $0).resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }) else { throw WorkspaceError(String(format: tr("找不到可执行的 %@，请安装后重新检测或设置绝对路径"), provider.title)) }
         return (executable, env)
     }
 }

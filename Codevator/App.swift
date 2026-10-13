@@ -1,28 +1,135 @@
 import SwiftUI
 import AppKit
 
+func tr(_ key: String) -> String { NSLocalizedString(key, comment: "") }
+
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: tr("跟随系统")
+        case .light: tr("浅色")
+        case .dark: tr("深色")
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max.fill"
+        case .dark: "moon.fill"
+        }
+    }
+    var appKitAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+
+    @MainActor static func apply(_ rawValue: String) {
+        let appearance = AppAppearance(rawValue: rawValue) ?? .system
+        NSApp.appearance = appearance.appKitAppearance
+        for window in NSApp.windows {
+            style(window, appearance: appearance)
+        }
+    }
+
+    @MainActor static func style(_ window: NSWindow, appearance: AppAppearance) {
+        guard window.title.hasPrefix("Codevator") else { return }
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = true
+        let dark = NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1)
+        let light = NSColor(srgbRed: 0.97, green: 0.97, blue: 0.98, alpha: 1)
+        switch appearance {
+        case .dark:
+            window.backgroundColor = dark
+        case .light:
+            window.backgroundColor = light
+        case .system:
+            window.backgroundColor = NSColor(name: NSColor.Name("CodevatorWindowBackground")) { currentAppearance in
+                currentAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            }
+        }
+    }
+}
+
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case system, chinese = "zh-Hans", english = "en"
+    static let runningRawValue = UserDefaults.standard.string(forKey: "language") ?? system.rawValue
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: tr("跟随系统")
+        case .chinese: tr("简体中文")
+        case .english: "English"
+        }
+    }
+    var locale: Locale? {
+        switch self {
+        case .system: nil
+        case .chinese: Locale(identifier: "zh-Hans")
+        case .english: Locale(identifier: "en")
+        }
+    }
+    static func apply(_ rawValue: String) {
+        let language = AppLanguage(rawValue: rawValue) ?? .system
+        if language == .system {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([language.rawValue], forKey: "AppleLanguages")
+        }
+        UserDefaults.standard.synchronize()
+    }
+}
+
+private enum AppSurface {
+    static let darkSidebar = Color(red: 0.09, green: 0.10, blue: 0.12)
+    static let darkContent = Color(red: 0.12, green: 0.13, blue: 0.15)
+    static let lightContent = Color(red: 0.97, green: 0.975, blue: 0.985)
+
+    static func sidebar(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? darkSidebar : Color(nsColor: .windowBackgroundColor)
+    }
+
+    static func content(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? darkContent : lightContent
+    }
+}
+
 @main
 struct CodevatorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var workspace = Workspace()
+    @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
+    @AppStorage("language") private var language = AppLanguage.system.rawValue
     var body: some Scene {
         Window("Codevator", id: "workspace") {
             WorkspaceView(workspace: workspace)
                 .frame(minWidth: 850, minHeight: 560)
                 .task { delegate.workspace = workspace; await workspace.load() }
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await workspace.refreshAll() } }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    workspace.markVisibleTabRead()
+                    Task { await workspace.refreshAll() }
+                }
         }
         .commands {
             CommandGroup(after: .newItem) { Button("添加 Git 项目…") { workspace.chooseProject() }.keyboardShortcut("o") }
         }
-        Settings { CLISettings(workspace: workspace) }
+        Settings {
+            AppSettingsView(workspace: workspace, appearance: $appearance, language: $language)
+        }
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var workspace: Workspace?
+    var relaunchAfterTermination = false
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppAppearance.apply(UserDefaults.standard.string(forKey: "appearance") ?? AppAppearance.system.rawValue)
+        NotificationCenter.default.addObserver(self, selector: #selector(styleKeyWindow(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let icon = NSImage(contentsOf: url) {
             NSApplication.shared.applicationIconImage = icon
@@ -39,6 +146,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
     }
+    @objc private func styleKeyWindow(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        let appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "system") ?? .system
+        AppAppearance.style(window, appearance: appearance)
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let workspace else { return .terminateNow }
         guard !workspace.sessions.running.isEmpty else { workspace.sessions.isClosing = true; return .terminateNow }
@@ -46,10 +158,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ notification: Notification) {
+        guard relaunchAfterTermination else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "sleep 1; /usr/bin/open -a \"$1\"", "codevator-relaunch", Bundle.main.bundleURL.path]
+        try? process.run()
+    }
 }
 
 struct WorkspaceView: View {
     @ObservedObject var workspace: Workspace
+    @Environment(\.colorScheme) private var colorScheme
     @State private var createProject: Project?
     var body: some View {
         NavigationSplitView {
@@ -61,20 +181,10 @@ struct WorkspaceView: View {
                             Button("重试") { Task { await workspace.refresh(project) } }
                         }
                         ForEach(workspace.displayTrees(project.id)) { tree in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Label(tree.label, systemImage: tree.isMain ? "house" : "arrow.triangle.branch")
-                                Text(URL(fileURLWithPath: tree.path).lastPathComponent).font(.caption).foregroundStyle(.secondary)
-                                if tree.locked || tree.unavailable { Text(tree.locked ? "已锁定" : "不可用").font(.caption).foregroundStyle(.orange) }
-                            }
-                            .tag(tree.id)
-                            .contextMenu {
-                                Button("在 Finder 显示") { NSWorkspace.shared.selectFile(tree.path, inFileViewerRootedAtPath: "") }
-                                Button("移除 worktree…", role: .destructive) { Task { await workspace.removeTree(tree, project: project) } }
-                                    .disabled(tree.isMain || tree.locked || tree.unavailable || workspace.busy.contains(project.id))
-                            }
+                            treeItem(tree, project: project)
                         }
                     } label: {
-                        HStack { Text(project.name).fontWeight(.medium); if workspace.busy.contains(project.id) { ProgressView().controlSize(.small) } }
+                        projectRow(project)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contextMenu {
                                 Button("创建 worktree…") { createProject = project }.disabled(workspace.busy.contains(project.id))
@@ -87,26 +197,110 @@ struct WorkspaceView: View {
             .navigationTitle("项目")
             .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 400)
             .toolbar { Button(action: workspace.chooseProject) { Label("添加项目", systemImage: "plus") }; Button { Task { await workspace.refreshAll() } } label: { Label("刷新", systemImage: "arrow.clockwise") } }
+            .scrollContentBackground(.hidden)
+            .background(AppSurface.sidebar(for: colorScheme))
         } detail: {
-            if let tree = workspace.selectedTree {
-                WorktreeDetail(tree: tree, workspace: workspace, manager: workspace.sessions)
-            } else {
-                ContentUnavailableView {
-                    Label("Codevator", systemImage: "terminal")
-                } description: { Text(workspace.configuration.projects.isEmpty ? "添加一个 Git 项目，开始管理 worktree 与编程会话。" : "在左侧选择一个 worktree。") }
-                actions: { Button("添加 Git 项目…", action: workspace.chooseProject) }
+            Group {
+                if let tree = workspace.selectedTree {
+                    WorktreeDetail(tree: tree, workspace: workspace, manager: workspace.sessions)
+                } else {
+                    WorkspaceEmptyState(hasProjects: !workspace.configuration.projects.isEmpty) {
+                        workspace.chooseProject()
+                    }
+                }
             }
+            .background(AppSurface.content(for: colorScheme))
         }
+        .toolbarBackground(AppSurface.content(for: colorScheme), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .sheet(item: $createProject) { CreateWorktreeView(project: $0, workspace: workspace) }
         .alert("操作未完成", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
             Button("确定") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
         .overlay(alignment: .bottom) {
             if workspace.configurationBlocked {
-                HStack { Text("配置损坏或版本不支持，保存已暂停"); Button("备份并重置配置") { workspace.resetConfiguration() } }
+                HStack { Text("配置损坏或版本不支持，保存已暂停"); Button("备份并重置配置") { Task { await workspace.resetConfiguration() } } }
                     .padding().background(.regularMaterial)
             }
         }
+    }
+
+    private func treeRow(_ tree: Worktree, project: Project) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: tree.isMain ? "house" : "arrow.triangle.branch")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tree.displayName(projectName: project.name))
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(tree.label)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                    if tree.locked || tree.unavailable {
+                        Text(tree.locked ? "已锁定" : "不可用")
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .font(.caption)
+            }
+            Spacer(minLength: 4)
+            if workspace.sessions.unreadCount(in: tree.id) > 0 {
+                CompletionBadge(count: workspace.sessions.unreadCount(in: tree.id))
+            }
+        }
+    }
+
+    private func treeItem(_ tree: Worktree, project: Project) -> some View {
+        treeRow(tree, project: project)
+            .help(tree.path)
+            .tag(tree.id)
+            .contextMenu {
+                Button("在 Finder 显示") { NSWorkspace.shared.selectFile(tree.path, inFileViewerRootedAtPath: "") }
+                Button("移除 worktree…", role: .destructive) { Task { await workspace.removeTree(tree, project: project) } }
+                    .disabled(tree.isMain || tree.locked || tree.unavailable || workspace.busy.contains(project.id))
+            }
+    }
+
+    private func projectRow(_ project: Project) -> some View {
+        HStack {
+            Text(project.name).fontWeight(.medium)
+            if workspace.busy.contains(project.id) { ProgressView().controlSize(.small) }
+            Spacer(minLength: 4)
+            if workspace.sessions.unreadCount(forProject: project.id) > 0 {
+                CompletionBadge(count: workspace.sessions.unreadCount(forProject: project.id))
+            }
+        }
+    }
+}
+
+private struct WorkspaceEmptyState: View {
+    let hasProjects: Bool
+    let addProject: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "terminal")
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(.tint)
+                .frame(width: 68, height: 68)
+                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
+            Text(hasProjects ? LocalizedStringKey("选择一个 worktree") : LocalizedStringKey("添加你的第一个项目"))
+                .font(.title3.weight(.semibold))
+            Text(hasProjects ? LocalizedStringKey("从左侧选择 worktree，开始编程会话。") : LocalizedStringKey("添加 Git 项目后，就能管理 worktree 和编程会话。"))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            if !hasProjects {
+                Button("添加 Git 项目…", action: addProject)
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -114,44 +308,135 @@ struct WorktreeDetail: View {
     let tree: Worktree
     @ObservedObject var workspace: Workspace
     @ObservedObject var manager: SessionManager
+    private var selectedTab: SessionManager.Tab? { manager.selectedTab(for: tree.id) }
+    private var unavailable: Bool { tree.unavailable || workspace.busy.contains(tree.projectID) }
+    private func tabTitle(_ tab: SessionManager.Tab) -> String {
+        guard let provider = tab.provider else { return tr("新标签") }
+        let sameTool = manager.tabs(for: tree.id).filter { $0.provider == provider }
+        guard sameTool.count > 1, let position = sameTool.firstIndex(where: { $0.id == tab.id }) else { return provider.title }
+        return provider.title + " \(position + 1)"
+    }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text((workspace.configuration.projects.first(where: { $0.id == tree.projectID })?.name ?? "项目") + " · " + tree.label).font(.headline)
+                    Text((workspace.configuration.projects.first(where: { $0.id == tree.projectID })?.name ?? tr("项目")) + " · " + tree.label).font(.headline)
                     Text(tree.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 Spacer()
-                Picker("工具", selection: workspace.providerSelection(tree)) { ForEach(CLIProvider.allCases) { Text($0.title).tag($0) } }
-                    .pickerStyle(.segmented).frame(width: 180)
-                    .disabled(manager.sessions[tree.id]?.active == true)
-                if let session = manager.sessions[tree.id], session.active || session.stopping {
-                    Button("停止") { Task { await manager.stop(tree.id) } }.disabled(session.stopping)
-                } else {
-                    Button(manager.sessions[tree.id] == nil ? "启动" : "重新启动") {
-                        Task { await workspace.startSession(tree) }
-                    }.disabled(tree.unavailable || workspace.busy.contains(tree.projectID))
+                ForEach(CLIProvider.allCases) { provider in
+                    Button { Task { await workspace.openSession(tree, provider: provider) } } label: {
+                        Label { Text(provider.title) } icon: { CLIProviderIcon(provider: provider) }
+                    }
+                    .accessibilityLabel("新建 \(provider.title) 标签")
+                    .help("在新标签中启动 \(provider.title)")
+                    .disabled(unavailable)
                 }
-            }.padding()
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+            Divider()
+            HStack(spacing: 0) {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 4) {
+                        ForEach(manager.tabs(for: tree.id)) { tab in
+                            HStack(spacing: 2) {
+                                Button {
+                                    workspace.selectTab(tab.id, in: tree.id)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        if let provider = tab.provider { CLIProviderIcon(provider: provider) }
+                                        else { Image(systemName: "terminal").foregroundStyle(.secondary) }
+                                        Text(tabTitle(tab))
+                                        if manager.unreadCompletions.contains(tab.id) {
+                                            Circle().fill(.orange).frame(width: 6, height: 6)
+                                        } else if manager.sessions[tab.id]?.active == true {
+                                            Circle().fill(.green).frame(width: 5, height: 5)
+                                        }
+                                    }.padding(.horizontal, 8).padding(.vertical, 6)
+                                }
+                                .accessibilityLabel("\(tabTitle(tab)) 标签")
+                                Button { Task { await workspace.closeTab(tab.id) } } label: {
+                                    Image(systemName: "xmark").font(.caption2).padding(5)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("关闭 \(tabTitle(tab)) 标签")
+                            }
+                            .buttonStyle(.plain)
+                            .background(manager.selectedTabIDs[tree.id] == tab.id ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                        Button { _ = manager.createTab(for: tree.id) } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24, height: 24)
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("新建空白标签")
+                        .help("先创建标签，再选择编程工具")
+                        .padding(.leading, 2)
+                    }.padding(.horizontal, 8).padding(.vertical, 4)
+                }
+            }.background(.bar)
             Divider()
             if tree.unavailable { Text("此工作目录不可用，请刷新项目。已有会话可以停止。").foregroundStyle(.orange).padding(8) }
-            if let session = manager.sessions[tree.id] { SessionView(session: session) }
-            else {
-                ContentUnavailableView("启动编程会话", systemImage: "terminal", description: Text("选择 Codex 或 Claude 并启动。会话将运行在上方 worktree 目录中。"))
+            if let tab = selectedTab {
+                if let session = manager.sessions[tab.id] {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text(session.state).textSelection(.enabled)
+                            Spacer()
+                            if session.active || session.stopping {
+                                Button("停止") { Task { await manager.stop(tab.id) } }.disabled(session.stopping)
+                            } else {
+                                Button("重新启动") { Task { await workspace.startSession(tree, tabID: tab.id, provider: session.provider) } }
+                                    .disabled(unavailable)
+                            }
+                        }.font(.caption).padding(8).background(.bar)
+                        TerminalHost(session: session).id(ObjectIdentifier(session))
+                    }
+                } else {
+                    ContentUnavailableView {
+                        Label("选择编程工具", systemImage: "terminal")
+                    } description: {
+                        Text("在此标签中启动 Codex 或 Claude。")
+                    } actions: {
+                        HStack {
+                            ForEach(CLIProvider.allCases) { provider in
+                                Button { Task { await workspace.startSession(tree, tabID: tab.id, provider: provider) } } label: {
+                                    Label { Text(provider.title) } icon: { CLIProviderIcon(provider: provider) }
+                                }.disabled(unavailable)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                ContentUnavailableView("启动编程会话", systemImage: "terminal", description: Text("点击上方工具名称直接打开新标签，或点击 + 先创建空白标签。"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 }
 
-struct SessionView: View {
-    @ObservedObject var session: TerminalSession
+private struct CompletionBadge: View {
+    let count: Int
     var body: some View {
-        VStack(spacing: 0) {
-            HStack { Text(session.provider.title); Text(session.state).textSelection(.enabled); Spacer() }
-                .font(.caption).padding(8).background(.bar)
-            TerminalHost(session: session).id(ObjectIdentifier(session))
-        }
+        Text(String(count))
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.orange, in: Capsule())
+            .accessibilityLabel("\(count) 个已完成的会话待查看")
+    }
+}
+
+struct CLIProviderIcon: View {
+    let provider: CLIProvider
+    var body: some View {
+        Image(systemName: provider == .codex ? "chevron.left.forwardslash.chevron.right" : "asterisk")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(provider == .codex ? Color.teal : Color(red: 0.85, green: 0.42, blue: 0.27))
+            .frame(width: 16, height: 16)
+            .accessibilityHidden(true)
     }
 }
 
@@ -159,36 +444,212 @@ struct CreateWorktreeView: View {
     let project: Project
     @ObservedObject var workspace: Workspace
     @Environment(\.dismiss) private var dismiss
-    @State private var path = ""
+    @State private var root = ""
     @State private var branch = ""
     @State private var start = "HEAD"
-    @State private var newBranch = true
+    @State private var newBranch = false
+    @State private var customNameEnabled = false
+    @State private var customName = ""
+    @State private var generatedName = ""
     @State private var branches: [String] = []
     @State private var creationError: String?
+    private var reservedNames: Set<String> {
+        Set(workspace.displayTrees(project.id).map { $0.displayName(projectName: project.name) })
+    }
+    private var name: String {
+        if customNameEnabled { return customName }
+        if newBranch { return WorktreeLocation.automaticName(branch: branch, root: root, reservedNames: reservedNames) }
+        return WorktreeLocation.availableName(base: generatedName.isEmpty ? "worktree" : generatedName, root: root, reservedNames: reservedNames)
+    }
+    private var targetPath: String { WorktreeLocation.path(root: root, name: name, projectName: project.name) }
+    private var nameTaken: Bool {
+        reservedNames.contains(name) || FileManager.default.fileExists(atPath: URL(fileURLWithPath: root).appendingPathComponent(name).path)
+    }
+    private var canCreate: Bool {
+        root.hasPrefix("/") && !branch.isEmpty && WorktreeLocation.validName(name) && !nameTaken &&
+        !workspace.busy.contains(project.id)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("创建 worktree · \(project.name)").font(.title2)
             Toggle("创建新分支", isOn: $newBranch)
+                .onChange(of: newBranch) { _ in branch = "" }
             if newBranch { TextField("新分支名", text: $branch); TextField("本地起点", text: $start) }
             else { Picker("已有本地分支", selection: $branch) { Text("选择分支").tag(""); ForEach(branches, id: \.self) { Text($0).tag($0) } } }
-            TextField("新目录的绝对路径", text: $path)
-            Button("选择父目录…") {
-                let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-                if panel.runModal() == .OK, let url = panel.url { path = url.appendingPathComponent(branch.isEmpty ? "new-worktree" : branch.replacingOccurrences(of: "/", with: "-")).path }
+            Toggle("自定义 worktree 名称", isOn: $customNameEnabled)
+            if customNameEnabled {
+                TextField("worktree 名称", text: $customName)
+                if !customName.isEmpty && !WorktreeLocation.validName(customName) {
+                    Text("名称只能是单个目录名，不能包含 / 或 :。")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            } else {
+                HStack {
+                    Text("自动名称：\(name)").font(.subheadline).foregroundStyle(.secondary)
+                    if !newBranch {
+                        Button("换一个") {
+                            generatedName = WorktreeLocation.randomName(root: root, reservedNames: reservedNames, excluding: [generatedName])
+                        }
+                        .controlSize(.small)
+                    }
+                }
             }
-            Text("目标目录须不存在。创建完成后不会自动启动 CLI。").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                TextField("worktree 根目录的绝对路径", text: $root)
+                Button("选择目录…") {
+                    let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+                    if panel.runModal() == .OK, let url = panel.url { root = url.path }
+                }
+            }
+            Text("目标路径：\(targetPath)")
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            if customNameEnabled && nameTaken {
+                Text("此名称对应的目录已存在，请换一个名称。")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            Text("创建完成后不会自动启动 CLI。").font(.caption).foregroundStyle(.secondary)
             if let creationError { Text(creationError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Spacer(); Button("取消") { dismiss() }.disabled(workspace.busy.contains(project.id))
                 Button("创建") { Task {
                     creationError = nil
-                    if await workspace.create(project, path: path, branch: branch, newBranch: newBranch, start: start) { dismiss() }
+                    if await workspace.create(project, path: targetPath, branch: branch, newBranch: newBranch, start: start) { dismiss() }
                     else { creationError = workspace.error; workspace.error = nil }
                 } }
-                    .disabled(path.isEmpty || branch.isEmpty || workspace.busy.contains(project.id))
+                    .disabled(!canCreate)
             }
         }.padding(24).frame(width: 500)
-        .task { do { branches = try await workspace.git.branches(project) } catch { creationError = error.localizedDescription } }
+        .task {
+            root = WorktreeLocation.suggestedRoot(project: project, trees: workspace.displayTrees(project.id))
+            generatedName = WorktreeLocation.randomName(root: root, reservedNames: reservedNames)
+            do { branches = try await workspace.git.branches(project) } catch { creationError = error.localizedDescription }
+        }
+    }
+}
+
+private enum SettingsSection: Hashable {
+    case appearance, language, tools
+}
+
+struct AppSettingsView: View {
+    @ObservedObject var workspace: Workspace
+    @Binding var appearance: String
+    @Binding var language: String
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var section: SettingsSection? = .appearance
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $section) {
+                Label("外观", systemImage: "paintbrush.pointed")
+                    .tag(SettingsSection.appearance)
+                Label("语言", systemImage: "character.bubble")
+                    .tag(SettingsSection.language)
+                Label("编程工具", systemImage: "terminal")
+                    .tag(SettingsSection.tools)
+            }
+            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            .scrollContentBackground(.hidden)
+            .background(AppSurface.sidebar(for: colorScheme))
+        } detail: {
+            Group {
+                switch section {
+                case .appearance:
+                    AppearanceSettings(appearance: $appearance)
+                case .language:
+                    LanguageSettings(language: $language)
+                case .tools:
+                    CLISettings(workspace: workspace)
+                case nil:
+                    ContentUnavailableView("选择设置项", systemImage: "gearshape")
+                }
+            }
+            .background(AppSurface.content(for: colorScheme))
+        }
+        .frame(minWidth: 700, minHeight: 400)
+        .toolbarBackground(AppSurface.content(for: colorScheme), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
+    }
+}
+
+private struct LanguageSettings: View {
+    @Binding var language: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("语言").font(.title2.weight(.semibold))
+            Text("选择菜单和界面的显示语言。")
+                .foregroundStyle(.secondary)
+            Picker("应用语言", selection: $language) {
+                ForEach(AppLanguage.allCases) { option in
+                    Text(option.title).tag(option.rawValue)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .onChange(of: language) { _, newValue in
+                AppLanguage.apply(newValue)
+            }
+            if language != AppLanguage.runningRawValue {
+                Text("重新启动 Codevator 后，菜单和界面将使用所选语言。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("重新启动 Codevator") {
+                    (NSApp.delegate as? AppDelegate)?.relaunchAfterTermination = true
+                    NSApp.terminate(nil)
+                }
+            }
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct AppearanceSettings: View {
+    @Binding var appearance: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("外观").font(.title2.weight(.semibold))
+                Text("选择 Codevator 的显示方式。")
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                ForEach(AppAppearance.allCases) { option in
+                    Button {
+                        AppAppearance.apply(option.rawValue)
+                        appearance = option.rawValue
+                    } label: {
+                        VStack(spacing: 14) {
+                            Image(systemName: option.symbol)
+                                .font(.system(size: 28, weight: .medium))
+                                .frame(height: 38)
+                            HStack(spacing: 6) {
+                                Text(option.title).fontWeight(.medium)
+                                if appearance == option.rawValue {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100)
+                        .background(appearance == option.rawValue ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(appearance == option.rawValue ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option.title)
+                    .accessibilityAddTraits(appearance == option.rawValue ? .isSelected : [])
+                }
+            }
+            Text("跟随系统时，Codevator 会随 macOS 的外观设置自动切换。")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -198,7 +659,7 @@ struct CLISettings: View {
     var body: some View {
         Form {
             ForEach(CLIProvider.allCases) { provider in
-                TextField(provider.title + " 绝对路径（留空自动检测）", text: Binding(get: { workspace.configuration.cliPaths[provider.rawValue] ?? "" }, set: { workspace.configuration.cliPaths[provider.rawValue] = $0; workspace.save() }))
+                TextField(provider.title + tr(" 绝对路径（留空自动检测）"), text: Binding(get: { workspace.configuration.cliPaths[provider.rawValue] ?? "" }, set: { workspace.configuration.cliPaths[provider.rawValue] = $0; workspace.save() }))
             }
             Button("重新检测 CLI") {
                 Task {
@@ -212,6 +673,6 @@ struct CLISettings: View {
                 }
             }
             Text(result).font(.caption).textSelection(.enabled)
-        }.padding(24).frame(width: 600)
+        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
