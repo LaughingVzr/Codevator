@@ -10,7 +10,11 @@
 
 Codevator helps you move between coding tasks without losing your place. Keep your Git projects and worktrees in the sidebar, then open Codex or Claude Code in a separate tab for each task. Your conversations keep running while you switch projects or tabs.
 
-> Codevator is in active development. [Download the first preview](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.0) or build it from source.
+<p align="center">
+  <img src="docs/screenshots/codevator-ocean.png" alt="Codevator with sample projects, worktrees, and a Codex conversation" width="960" />
+</p>
+
+> Codevator is in active development. [Download the latest preview](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.1) or build it from source.
 
 ## What you can do
 
@@ -24,7 +28,7 @@ Codevator runs the coding tools installed on your Mac. It does not include Codex
 
 You'll need macOS 14 or later and Git. Install Codex or Claude Code separately if you want to use it in Codevator. The downloadable app is unsigned and has not been notarized by Apple, so macOS may ask you to review it before opening. Building from source also requires Xcode.
 
-1. Download `Codevator-0.1.0-macOS.dmg` from the [release page](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.0), open it, and drag Codevator to Applications. To build it yourself, clone this repository, open `Codevator.xcodeproj` in Xcode, select the **Codevator** scheme and **My Mac**, then click **Run**.
+1. Download `Codevator-0.1.1-macOS.dmg` from the [release page](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.1), open it, and drag Codevator to Applications. To build it yourself, clone this repository, open `Codevator.xcodeproj` in Xcode, select the **Codevator** scheme and **My Mac**, then click **Run**.
 2. In the app, click **+** in the sidebar (or press **⌘O**) and choose a local Git project.
 3. Select a worktree and click **Codex** or **Claude** to start a tab. You can also create a blank tab first and choose a tool later.
 
@@ -45,15 +49,11 @@ For earlier implementation and test notes, see the [development record](docs/imp
 <summary>Build and test from Terminal</summary>
 
 ```sh
-xcodebuild -project Codevator.xcodeproj -scheme Codevator \
-  -derivedDataPath .build/CodevatorDerivedData \
-  -skipPackagePluginValidation -disableAutomaticPackageResolution build
-
-xcodebuild -project Codevator.xcodeproj -scheme Codevator \
-  -derivedDataPath .build/CodevatorDerivedData \
-  -skipPackagePluginValidation -disableAutomaticPackageResolution \
-  -only-testing:CodevatorTests test
+make build
+make test
 ```
+
+Run `make test-ui` for the macOS UI tests. Set `XCODEBUILD` if Xcode is installed outside `/Applications/Xcode.app`.
 
 </details>
 

@@ -141,7 +141,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let window = NSApplication.shared.windows.first(where: { $0.title == "Codevator" }) else { return }
             window.collectionBehavior.insert(.moveToActiveSpace)
             let visible = screen.visibleFrame
-            window.setFrameOrigin(NSPoint(x: visible.midX - window.frame.width / 2, y: visible.midY - window.frame.height / 2))
+            let width = min(window.frame.width, visible.width - 40)
+            let height = min(window.frame.height, visible.height - 40)
+            window.setFrame(NSRect(x: visible.midX - width / 2, y: visible.midY - height / 2,
+                                   width: width, height: height), display: true)
             window.makeKeyAndOrderFront(nil)
         }
         #endif

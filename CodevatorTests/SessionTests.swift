@@ -69,7 +69,7 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(session.processGroup, parent)
         await session.stop()
         XCTAssertFalse(session.active); XCTAssertFalse(session.terminal.process.running)
-        XCTAssertEqual(kill(parent, 0), -1)
+        let parentGone = await waitFor { kill(parent, 0) == -1 }; XCTAssertTrue(parentGone)
         let childGone = await waitFor { kill(child, 0) == -1 }; XCTAssertTrue(childGone)
         XCTAssertTrue(external.isRunning)
     }
@@ -230,6 +230,9 @@ final class SessionTests: XCTestCase {
         session.terminal.copy(self)
         let copied = try XCTUnwrap(pasteboard.string(forType: .string))
         XCTAssertTrue(copied.contains("clipboard 中文 text"))
+        session.terminal.selection.selectNone()
+        session.terminal.copy(self)
+        XCTAssertEqual(pasteboard.string(forType: .string), copied)
     }
 
     func testCommandCopyKeepsSelectionDuringKeyDispatch() throws {

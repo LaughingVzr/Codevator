@@ -5,6 +5,22 @@ import Combine
 
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
+    var refreshWholeSurfaceAfterOutput = false
+    private var wholeSurfaceRefreshScheduled = false
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        guard refreshWholeSurfaceAfterOutput, !wholeSurfaceRefreshScheduled else { return }
+        wholeSurfaceRefreshScheduled = true
+        // Codex frequently rewrites small parts of CJK-heavy output. A final
+        // full repaint clears cells left behind by partial AppKit redraws.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(60)) { [weak self] in
+            guard let self else { return }
+            self.wholeSurfaceRefreshScheduled = false
+            self.setNeedsDisplay(self.bounds)
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let editingMonitor { NSEvent.removeMonitor(editingMonitor); self.editingMonitor = nil }
@@ -20,10 +36,19 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
 
     override func copy(_ sender: Any) {
         traceEditing("copy")
-        super.copy(sender)
+        // SwiftTerm clears the shared clipboard even when no text is selected.
+        // Keep the previous clipboard contents if the selection disappeared
+        // before a menu command or shortcut reaches the terminal.
+        guard let selected = getSelection(), !selected.isEmpty else { return }
+        let clipboard = NSPasteboard.general
+        clipboard.clearContents()
+        clipboard.setString(selected, forType: .string)
     }
 
     override func mouseDown(with event: NSEvent) {
+        // SwiftTerm can leave another control as first responder after a click
+        // in the terminal, which routes Command-C away from the selection.
+        window?.makeFirstResponder(self)
         let extendingSelection = selection.active && event.modifierFlags.contains(.shift)
         withTextSelectionOverride(event) { super.mouseDown(with: event) }
         // SwiftTerm seeds a drag at its first movement. Preserve the actual
@@ -102,7 +127,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     let treeID: String
     let path: String
     let provider: CLIProvider
-    let terminal: LocalProcessTerminalView
+    let terminal: AccessibleTerminalView
     @Published var state = tr("启动中")
     @Published var active = true
     @Published var stopping = false
@@ -116,6 +141,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     init(tree: Worktree, provider: CLIProvider) {
         treeID = tree.id; path = tree.path; self.provider = provider
         terminal = AccessibleTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), font: .monospacedSystemFont(ofSize: 13, weight: .regular), options: TerminalOptions(scrollback: 5000))
+        terminal.refreshWholeSurfaceAfterOutput = provider == .codex
         terminal.setAccessibilityElement(true)
         terminal.setAccessibilityRole(.textArea)
         terminal.setAccessibilityLabel(provider.title + tr(" 终端"))
