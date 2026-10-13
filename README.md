@@ -17,7 +17,6 @@ Codevator helps you move between coding tasks without losing your place. Keep yo
 - **See all your work in one place.** Add local Git projects and browse their worktrees from the sidebar. A worktree is another working folder for the same project, useful when you want to work on a different branch without disturbing your main folder.
 - **Start a conversation where the code lives.** Open Codex or Claude Code in the selected worktree. Each tab has its own conversation, and you can keep several tabs open at once.
 - **Know when a reply is ready.** Finished conversations show an indicator on the tab and beside the related worktree and project. Codevator can also send a macOS notification.
-- **Make the workspace yours.** Choose light or dark appearance, or follow macOS. The terminal stays dark for readability. Use the app in English or Simplified Chinese.
 
 Codevator runs the coding tools installed on your Mac. It does not include Codex or Claude Code, and you sign in through each tool as usual.
 
@@ -32,7 +31,7 @@ You'll need macOS 14 or later, Git, and Xcode. Install Codex or Claude Code sepa
 
 To create another worktree, right-click a project in the sidebar. Codevator can use an existing branch or create a new one, and it suggests a name that you can change.
 
-Open **Codevator → Settings** to change the app's appearance and language, or to set a custom path to a coding tool. Leave the path empty to let Codevator find `codex` or `claude` on your Mac. Changing the app language takes effect after a restart.
+Codevator looks for `codex` and `claude` on your Mac. If a tool is installed somewhere else, you can set its path in **Codevator → Settings → Coding Tools**.
 
 ## Good to know
 
@@ -41,7 +40,7 @@ Open **Codevator → Settings** to change the app's appearance and language, or 
 - Worktree removal is limited to clean, inactive worktrees. Removing a project from the sidebar does not delete its files.
 - The app keeps the tools' own sign-in and approval flows. It does not automatically approve commands for them.
 
-The built-in terminal uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), which is licensed under MIT. For earlier implementation and test notes, see the [development record](docs/implementation-status.md).
+For earlier implementation and test notes, see the [development record](docs/implementation-status.md).
 
 <details>
 <summary>Build and test from Terminal</summary>

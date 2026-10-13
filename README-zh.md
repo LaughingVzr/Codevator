@@ -17,7 +17,6 @@ Codevator 帮你在不同的编程任务间切换，又不必担心找不到刚�
 - **集中管理项目。** 把本机 Git 项目加入侧边栏，直接查看它们的 worktree。你可以把 worktree 理解成同一项目的另一个工作文件夹：在新分支上工作时，不必打乱主文件夹。
 - **在对应的目录里开始对话。** 选中 worktree 后，打开 Codex 或 Claude Code。每个标签都是独立会话，也可以同时开多个标签。
 - **不错过后台回复。** 对话完成后，标签、worktree 和项目旁会出现提示；也可以收到 macOS 通知。
-- **按习惯调整外观。** 界面可选浅色、深色或跟随系统，终端始终保持暗色。应用支持简体中文和英文。
 
 Codevator 使用你 Mac 上已安装的编程工具，不随应用附带 Codex 或 Claude Code。登录仍在各工具中完成。
 
@@ -32,7 +31,7 @@ Codevator 使用你 Mac 上已安装的编程工具，不随应用附带 Codex �
 
 要创建新的 worktree，右键点击侧边栏中的项目。你可以基于已有分支创建，也可以新建分支；应用会推荐一个名称，你仍能自己修改。
 
-在 **Codevator → 设置** 中可以切换外观和语言，也可以填写编程工具的自定义路径。路径留空时，应用会在本机查找 `codex` 或 `claude`。切换语言后需要重新启动应用。
+Codevator 会在本机查找 `codex` 和 `claude`。如果工具安装在其他位置，可以到 **Codevator → 设置 → 编程工具** 填写路径。
 
 ## 使用前了解一下
 
@@ -41,7 +40,7 @@ Codevator 使用你 Mac 上已安装的编程工具，不随应用附带 Codex �
 - 只有没有未提交改动、也没有运行会话的非主 worktree 才能在应用中删除。把项目从侧边栏移除不会删除磁盘文件。
 - 登录和执行命令时的授权仍由 Codex、Claude Code 自己处理；Codevator 不会替你自动批准。
 
-内置终端使用 [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)，该依赖采用 MIT 协议。早期的实现和测试记录见[开发记录](docs/implementation-status.md)。
+早期的实现和测试记录见[开发记录](docs/implementation-status.md)。
 
 <details>
 <summary>通过终端构建与测试</summary>
