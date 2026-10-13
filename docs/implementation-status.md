@@ -63,4 +63,4 @@ SwiftTerm 提供 AppKit、本地 forkpty、cwd、PID 与尺寸接口，当前已
 
 项目、源码目录、Xcode 工程、scheme 与应用名称改为 Codevator；主应用 bundle identifier `dev.codeelevator.CodeElevator` 和原配置目录保持兼容。早期报告中的 CodeElevator 为当时名称。
 
-Codevator 改名回归：23 tests、0 failures，报告 `.build/CodevatorDerivedData/Logs/Test/Test-Codevator-2026.10.12_21-41-43-+0800.xcresult`。GitHub 仓库：https://github.com/LaughingVzr/Codevator （私有）。
+Codevator 改名回归：23 tests、0 failures，报告 `.build/CodevatorDerivedData/Logs/Test/Test-Codevator-2026.10.12_21-41-43-+0800.xcresult`。GitHub 仓库：https://github.com/LaughingVzr/Codevator （记录当时为私有）。

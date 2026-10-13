@@ -10,7 +10,7 @@
 
 Codevator helps you move between coding tasks without losing your place. Keep your Git projects and worktrees in the sidebar, then open Codex or Claude Code in a separate tab for each task. Your conversations keep running while you switch projects or tabs.
 
-> Codevator is in active development. You can build and try it today, but there is no packaged release yet.
+> Codevator is in active development. [Download the first preview](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.0) or build it from source.
 
 ## What you can do
 
@@ -22,12 +22,11 @@ Codevator runs the coding tools installed on your Mac. It does not include Codex
 
 ## Get started
 
-You'll need macOS 14 or later, Git, and Xcode. Install Codex or Claude Code separately if you want to use it in Codevator.
+You'll need macOS 14 or later and Git. Install Codex or Claude Code separately if you want to use it in Codevator. The downloadable app is unsigned and has not been notarized by Apple, so macOS may ask you to review it before opening. Building from source also requires Xcode.
 
-1. Clone this repository and open `Codevator.xcodeproj` in Xcode.
-2. Select the **Codevator** scheme and **My Mac**, then click **Run**.
-3. In the app, click **+** in the sidebar (or press **⌘O**) and choose a local Git project.
-4. Select a worktree and click **Codex** or **Claude** to start a tab. You can also create a blank tab first and choose a tool later.
+1. Download `Codevator-0.1.0-macOS.zip` from the [release page](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.0), extract it, and move Codevator to Applications. To build it yourself, clone this repository, open `Codevator.xcodeproj` in Xcode, select the **Codevator** scheme and **My Mac**, then click **Run**.
+2. In the app, click **+** in the sidebar (or press **⌘O**) and choose a local Git project.
+3. Select a worktree and click **Codex** or **Claude** to start a tab. You can also create a blank tab first and choose a tool later.
 
 To create another worktree, right-click a project in the sidebar. Codevator can use an existing branch or create a new one, and it suggests a name that you can change.
 
