@@ -250,9 +250,16 @@ actor GitService {
 }
 
 enum CLIProvider: String, CaseIterable, Identifiable {
-    case codex, claude
+    case codex, claude, terminal
+    static let aiCases: [CLIProvider] = [.codex, .claude]
     var id: String { rawValue }
-    var title: String { self == .codex ? "Codex" : "Claude" }
+    var title: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude"
+        case .terminal: return tr("终端")
+        }
+    }
 }
 
 actor CLIResolver {
@@ -272,7 +279,18 @@ actor CLIResolver {
         env["TERM"] = "xterm-256color"; cached = env; return env
     }
     func invalidate() { cached = nil }
+    func resolveShell() async throws -> (String, [String: String]) {
+        var env = (try? await environment()) ?? ProcessInfo.processInfo.environment
+        let candidates = [env["SHELL"], ProcessInfo.processInfo.environment["SHELL"], "/bin/zsh", "/bin/bash"].compactMap { $0 }
+        guard let shell = candidates.first(where: { $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0) }) else {
+            throw WorkspaceError("找不到可用的登录 Shell")
+        }
+        env["SHELL"] = shell
+        env["TERM"] = "xterm-256color"
+        return (shell, env)
+    }
     func resolve(_ provider: CLIProvider, override: String?) async throws -> (String, [String: String]) {
+        guard provider != .terminal else { return try await resolveShell() }
         let env: [String: String]
         do { env = try await environment() }
         catch {

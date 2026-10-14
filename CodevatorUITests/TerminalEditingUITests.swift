@@ -2,6 +2,122 @@ import XCTest
 import AppKit
 
 final class TerminalEditingUITests: XCTestCase {
+    func testWorktreeShowsPendingAndUnreadBadgesTogether() throws {
+        continueAfterFailure = false
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("CodevatorStatusUI-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = repository.appendingPathComponent(".build/ui-fixtures/Project-A").path
+        guard FileManager.default.fileExists(atPath: fixture + "/.git"),
+              FileManager.default.isExecutableFile(atPath: "/usr/bin/python3") else {
+            throw XCTSkip("Requires a disposable Git fixture and Python 3")
+        }
+        let fakeCLI = folder.appendingPathComponent("codex")
+        let script = """
+        #!/usr/bin/python3
+        import json, os, sys, time
+        argument = next((value[7:] for value in sys.argv[1:] if value.startswith("notify=")), None)
+        marker = json.loads(argument)[-1] if argument else None
+        finish = os.path.join(os.path.dirname(__file__), "complete-now")
+        print("READY", flush=True)
+        for line in sys.stdin:
+            if line.strip() == "complete":
+                deadline = time.time() + 20
+                while not os.path.exists(finish) and time.time() < deadline:
+                    time.sleep(0.05)
+                if os.path.exists(finish):
+                    with open(marker, "a") as file:
+                        file.write("x")
+                    print("DONE", flush=True)
+            else:
+                print("WAITING", flush=True)
+        """
+        try script.write(to: fakeCLI, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeCLI.path)
+        let common = fixture + "/.git"
+        let config = folder.appendingPathComponent("workspace.json")
+        let data: [String: Any] = ["schemaVersion": 1, "projects": [["id": common, "name": "UI Test", "directory": fixture, "expanded": true]], "selection": common + "\n" + fixture, "cliPaths": ["codex": fakeCLI.path]]
+        try JSONSerialization.data(withJSONObject: data).write(to: config)
+        let clipboard = NSPasteboard.general
+        let original = (clipboard.pasteboardItems ?? []).map { item in
+            let clone = NSPasteboardItem()
+            for type in item.types { if let bytes = item.data(forType: type) { clone.setData(bytes, forType: type) } }
+            return clone
+        }
+        addTeardownBlock { clipboard.clearContents(); if !original.isEmpty { clipboard.writeObjects(original) } }
+
+        let app = XCUIApplication()
+        app.launchEnvironment["CODEVATOR_UI_TEST_CONFIG"] = config.path
+        app.launch()
+        addTeardownBlock { app.terminate() }
+        focus(app)
+        let createCodex = app.buttons["新建 Codex 标签"]
+        XCTAssertTrue(createCodex.waitForExistence(timeout: 20))
+        createCodex.click()
+        let terminal = app.textViews["Codex 终端"]
+        XCTAssertTrue(terminal.waitForExistence(timeout: 20))
+        let ready = NSPredicate { _, _ in (terminal.value as? String)?.contains("READY") == true }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: terminal)], timeout: 10), .completed)
+        terminal.click()
+        clipboard.clearContents()
+        clipboard.setString("pending", forType: .string)
+        app.typeKey("v", modifierFlags: .command)
+        app.typeKey(.return, modifierFlags: [])
+
+        let pending = app.descendants(matching: .any).matching(identifier: "worktreePending-\(fixture)").firstMatch
+        XCTAssertTrue(pending.waitForExistence(timeout: 10))
+        createCodex.click()
+        XCTAssertTrue(app.buttons["Codex 2 标签"].waitForExistence(timeout: 20))
+        XCTAssertTrue(terminal.waitForExistence(timeout: 20))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: terminal)], timeout: 10), .completed)
+        terminal.click()
+        clipboard.clearContents()
+        clipboard.setString("complete", forType: .string)
+        app.typeKey("v", modifierFlags: .command)
+        app.typeKey(.return, modifierFlags: [])
+        app.buttons["Codex 1 标签"].click()
+        try Data().write(to: folder.appendingPathComponent("complete-now"))
+
+        let completed = app.descendants(matching: .any).matching(identifier: "worktreeCompleted-\(fixture)").firstMatch
+        XCTAssertTrue(completed.waitForExistence(timeout: 12))
+        XCTAssertTrue(pending.exists)
+        app.buttons["停止"].click()
+        app.buttons["Codex 2 标签"].click()
+        app.buttons["停止"].click()
+    }
+
+    func testTerminalFontSizeSettingsAndKeyboardShortcuts() throws {
+        continueAfterFailure = false
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("CodevatorFontUI-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let app = XCUIApplication()
+        app.launchEnvironment["CODEVATOR_UI_TEST_CONFIG"] = folder.appendingPathComponent("workspace.json").path
+        app.launch()
+        addTeardownBlock { app.terminate() }
+        focus(app)
+        app.menuBars.menuBarItems["Codevator"].click()
+        app.menuItems["设置…"].click()
+        let settings = app.windows.matching(NSPredicate(format: "title != 'Codevator'")).firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        let terminalSection = settings.staticTexts["终端"]
+        XCTAssertTrue(terminalSection.waitForExistence(timeout: 5))
+        terminalSection.click()
+        let size = settings.staticTexts["terminalFontSize"]
+        XCTAssertTrue(size.waitForExistence(timeout: 5))
+        let originalText = try XCTUnwrap(size.value as? String)
+        let original = try XCTUnwrap(Int(originalText.replacingOccurrences(of: " pt", with: "")))
+        app.typeKey("+", modifierFlags: .command)
+        XCTAssertEqual(size.value as? String, "\(min(original + 1, 28)) pt")
+        app.typeKey("-", modifierFlags: .command)
+        XCTAssertEqual(size.value as? String, "\(original) pt")
+        settings.buttons["放大终端文字"].click()
+        XCTAssertEqual(size.value as? String, "\(min(original + 1, 28)) pt")
+        settings.buttons["缩小终端文字"].click()
+        XCTAssertEqual(size.value as? String, "\(original) pt")
+    }
+
     func testMultipleTabsAndBlankTabSelection() throws {
         continueAfterFailure = false
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("CodevatorTabsUI-" + UUID().uuidString)
@@ -32,8 +148,9 @@ final class TerminalEditingUITests: XCTestCase {
         XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 10))
         app.buttons["新建空白标签"].click()
         XCTAssertTrue(app.buttons["新标签 标签"].waitForExistence(timeout: 10))
-        app.buttons["Claude"].click()
-        XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 20))
+        app.buttons["终端"].click()
+        XCTAssertTrue(app.textViews["终端"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["终端 标签"].exists)
         app.buttons["停止"].click()
         app.buttons["Codex 标签"].click()
         app.buttons["停止"].click()

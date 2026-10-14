@@ -5,6 +5,7 @@ import Combine
 
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
+    var onSubmittedInput: (() -> Void)?
     var refreshWholeSurfaceAfterOutput = false
     private var wholeSurfaceRefreshScheduled = false
 
@@ -18,6 +19,17 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
             guard let self else { return }
             self.wholeSurfaceRefreshScheduled = false
             self.setNeedsDisplay(self.bounds)
+        }
+    }
+
+    override func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        super.send(source: source, data: data)
+        let encoded = String(decoding: data, as: UTF8.self)
+        // SwiftTerm sends Return as CR in normal mode and as a Kitty key
+        // sequence when a CLI enables enhanced keyboard reporting.
+        if data.contains(10) || data.contains(13) ||
+            encoded == "\u{1B}[13u" || encoded == "\u{1B}[13;1u" {
+            onSubmittedInput?()
         }
     }
 
@@ -131,20 +143,22 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     @Published var state = tr("启动中")
     @Published var active = true
     @Published var stopping = false
+    @Published private(set) var awaitingResponse = false
     private(set) var processGroup: pid_t = 0
     private let completionFile = FileManager.default.temporaryDirectory.appendingPathComponent("codevator-complete-" + UUID().uuidString)
     private var completionTimer: Timer?
     private var completionLength: UInt64 = 0
+    private var completionTrackingEnabled = false
     var onTurnCompleted: (() -> Void)?
     var hasManagedProcesses: Bool { active || stopping || (processGroup > 0 && kill(-processGroup, 0) == 0) }
 
-    init(tree: Worktree, provider: CLIProvider) {
+    init(tree: Worktree, provider: CLIProvider, fontSize: Int = TerminalFontSize.defaultValue) {
         treeID = tree.id; path = tree.path; self.provider = provider
-        terminal = AccessibleTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), font: .monospacedSystemFont(ofSize: 13, weight: .regular), options: TerminalOptions(scrollback: 5000))
+        terminal = AccessibleTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), font: .monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular), options: TerminalOptions(scrollback: 5000))
         terminal.refreshWholeSurfaceAfterOutput = provider == .codex
         terminal.setAccessibilityElement(true)
         terminal.setAccessibilityRole(.textArea)
-        terminal.setAccessibilityLabel(provider.title + tr(" 终端"))
+        terminal.setAccessibilityLabel(provider == .terminal ? provider.title : provider.title + tr(" 终端"))
         let editingMenu = NSMenu(title: tr("终端"))
         for (title, action) in [(tr("复制"), #selector(TerminalView.copy(_:))), (tr("粘贴"), #selector(TerminalView.paste(_:)))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -156,6 +170,15 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         terminal.nativeForegroundColor = NSColor(calibratedWhite: 0.9, alpha: 1)
         terminal.nativeBackgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1)
         super.init(); terminal.processDelegate = self
+        terminal.onSubmittedInput = { [weak self] in self?.markSubmittedInput() }
+    }
+    private func markSubmittedInput() {
+        guard completionTrackingEnabled, active, !stopping, terminal.process.running else { return }
+        awaitingResponse = true
+    }
+    func setFontSize(_ size: Int) {
+        guard Int(terminal.font.pointSize) != size else { return }
+        terminal.font = .monospacedSystemFont(ofSize: CGFloat(size), weight: .regular)
     }
     func launch(executable: String, environment: [String: String], args: [String] = []) {
         guard active, !stopping else { return }
@@ -189,12 +212,14 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
             let argv = ["/bin/sh", "-c", script, completionFile.path]
             guard let data = try? JSONSerialization.data(withJSONObject: argv, options: [.withoutEscapingSlashes]),
                   let value = String(data: data, encoding: .utf8) else { return [] }
+            completionTrackingEnabled = true
             return ["-c", "notify=" + value]
         }
         let quotedPath = "'" + completionFile.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let settings: [String: Any] = ["hooks": ["Stop": [["hooks": [["type": "command", "command": "umask 077; printf x >> " + quotedPath]]]]]]
         guard let data = try? JSONSerialization.data(withJSONObject: settings),
               let value = String(data: data, encoding: .utf8) else { return [] }
+        completionTrackingEnabled = true
         return ["--settings", value]
     }
     func monitorCompletions() {
@@ -210,13 +235,14 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         let length = size.uint64Value
         guard length > completionLength else { return }
         completionLength = length
+        awaitingResponse = false
         onTurnCompleted?()
     }
     private func stopCompletionMonitor() {
         completionTimer?.invalidate(); completionTimer = nil
         try? FileManager.default.removeItem(at: completionFile)
     }
-    func fail(_ message: String) { stopCompletionMonitor(); active = false; state = tr("失败：") + message }
+    func fail(_ message: String) { stopCompletionMonitor(); awaitingResponse = false; active = false; state = tr("失败：") + message }
     func stop() async {
         if stopping {
             while stopping { try? await Task.sleep(nanoseconds: 20_000_000) }
@@ -242,7 +268,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         for _ in 0..<50 where terminal.process.running { try? await Task.sleep(nanoseconds: 20_000_000) }
         if terminal.process.running { terminal.terminate() }
         stopCompletionMonitor()
-        processGroup = 0; active = false; stopping = false; state = tr("已停止")
+        processGroup = 0; awaitingResponse = false; active = false; stopping = false; state = tr("已停止")
     }
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
@@ -250,6 +276,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         checkCompletions()
         stopCompletionMonitor()
+        awaitingResponse = false
         active = false
         if !stopping {
             if let status = exitCode {
@@ -270,6 +297,13 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     }
 }
 
+enum TerminalFontSize {
+    static let key = "terminalFontSize"
+    static let defaultValue = 13
+    static let range = 10...28
+    static func clamped(_ value: Int) -> Int { min(max(value, range.lowerBound), range.upperBound) }
+}
+
 @MainActor
 final class SessionManager: ObservableObject {
     struct Tab: Identifiable, Equatable {
@@ -284,12 +318,29 @@ final class SessionManager: ObservableObject {
     @Published private(set) var selectedTabIDs: [String: String] = [:]
     @Published var sessions: [String: TerminalSession] = [:]
     @Published private(set) var unreadCompletions: Set<String> = []
+    @Published private(set) var fontSize: Int
     var onTurnCompleted: ((String, TerminalSession) -> Void)?
     let resolver = CLIResolver()
+    private let defaults: UserDefaults
     private var observations: [String: AnyCancellable] = [:]
     private var starting: Set<String> = []
     private var closing: Set<String> = []
     var isClosing = false
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        fontSize = defaults.object(forKey: TerminalFontSize.key) == nil
+            ? TerminalFontSize.defaultValue
+            : TerminalFontSize.clamped(defaults.integer(forKey: TerminalFontSize.key))
+    }
+    func setFontSize(_ value: Int) {
+        let size = TerminalFontSize.clamped(value)
+        guard fontSize != size else { return }
+        fontSize = size
+        defaults.set(size, forKey: TerminalFontSize.key)
+        for session in sessions.values { session.setFontSize(size) }
+    }
+    func adjustFontSize(by delta: Int) { setFontSize(fontSize + delta) }
+    func resetFontSize() { setFontSize(TerminalFontSize.defaultValue) }
     func tabs(for treeID: String) -> [Tab] { tabsByTree[treeID] ?? [] }
     func selectedTab(for treeID: String) -> Tab? {
         tabs(for: treeID).first { $0.id == selectedTabIDs[treeID] }
@@ -313,7 +364,7 @@ final class SessionManager: ObservableObject {
         guard !isClosing, !closing.contains(tabID),
               let index = tabsByTree[tree.id]?.firstIndex(where: { $0.id == tabID }) else { return }
         tabsByTree[tree.id]?[index].provider = provider
-        let session = TerminalSession(tree: tree, provider: provider)
+        let session = TerminalSession(tree: tree, provider: provider, fontSize: fontSize)
         session.onTurnCompleted = { [weak self, weak session] in
             guard let self, let session, self.sessions[tabID] === session else { return }
             self.onTurnCompleted?(tabID, session)
@@ -326,9 +377,9 @@ final class SessionManager: ObservableObject {
             guard !tree.unavailable, FileManager.default.fileExists(atPath: tree.path) else { throw WorkspaceError(tr("工作目录不可用，请刷新")) }
             let (executable, env) = try await resolver.resolve(provider, override: override)
             guard !isClosing, !closing.contains(tabID), sessions[tabID] === session, session.active else { return }
-            let arguments = session.completionArguments(for: executable)
+            let arguments = provider == .terminal ? ["-l"] : session.completionArguments(for: executable)
             session.launch(executable: executable, environment: env, args: arguments)
-            if !arguments.isEmpty, session.active { session.monitorCompletions() }
+            if provider != .terminal, !arguments.isEmpty, session.active { session.monitorCompletions() }
         } catch { if session.active { session.fail(error.localizedDescription) } }
     }
     @discardableResult func start(_ tree: Worktree, provider: CLIProvider, override: String?) async -> String {
@@ -342,6 +393,14 @@ final class SessionManager: ObservableObject {
     func unreadCount(in treeID: String) -> Int { tabs(for: treeID).filter { unreadCompletions.contains($0.id) }.count }
     func unreadCount(forProject projectID: String) -> Int {
         tabsByTree.keys.filter { $0.hasPrefix(projectID + "\n") }.reduce(0) { $0 + unreadCount(in: $1) }
+    }
+    func pendingCount(in treeID: String) -> Int {
+        tabs(for: treeID).reduce(0) { count, tab in
+            count + (sessions[tab.id]?.awaitingResponse == true ? 1 : 0)
+        }
+    }
+    func pendingCount(forProject projectID: String) -> Int {
+        tabsByTree.keys.filter { $0.hasPrefix(projectID + "\n") }.reduce(0) { $0 + pendingCount(in: $1) }
     }
     func close(_ tabID: String) async {
         guard let treeID = tabsByTree.first(where: { $0.value.contains(where: { $0.id == tabID }) })?.key,

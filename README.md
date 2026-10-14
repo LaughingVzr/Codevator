@@ -4,56 +4,55 @@
 
 <h1 align="center">Codevator</h1>
 
-<p align="center">A home for your projects, worktrees, and coding conversations on Mac.</p>
+<p align="center">Your projects, worktrees, and coding conversations in one Mac app.</p>
 
 <p align="center"><a href="README-zh.md">简体中文</a></p>
 
-Codevator helps you move between coding tasks without losing your place. Keep your Git projects and worktrees in the sidebar, then open Codex or Claude Code in a separate tab for each task. Your conversations keep running while you switch projects or tabs.
+Codevator gives each coding task its own place. Keep your Git projects and worktrees in the sidebar, then open Codex, Claude Code, or a regular terminal in the worktree you're using. Switch to another project whenever you need to; your open tabs keep running.
 
 <p align="center">
-  <img src="docs/screenshots/codevator-ocean.png" alt="Codevator with sample projects, worktrees, and a Codex conversation" width="960" />
+  <img src="docs/screenshots/codevator-ocean.png" alt="Codevator showing projects, worktrees, and a Codex conversation" width="960" />
 </p>
-
-> Codevator is in active development. [Download the latest preview](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.2) or build it from source.
 
 ## What you can do
 
-- **See all your work in one place.** Add local Git projects and browse their worktrees from the sidebar. A worktree is another working folder for the same project, useful when you want to work on a different branch without disturbing your main folder.
-- **Start a conversation where the code lives.** Open Codex or Claude Code in the selected worktree. Each tab has its own conversation, and you can keep several tabs open at once.
-- **Know when a reply is ready.** Finished conversations show an indicator on the tab and beside the related worktree and project. Codevator can also send a macOS notification.
-
-Codevator runs the coding tools installed on your Mac. It does not include Codex or Claude Code, and you sign in through each tool as usual.
+- **Move between projects without losing your place.** See your projects and their worktrees in the sidebar. A worktree is a separate working folder for the same Git project, so you can work on another branch without disturbing your main folder.
+- **Give each task its own tab.** Open Codex, Claude Code, or a regular terminal in the selected worktree. Open more than one tab, even in the same worktree, and return to them later.
+- **See which conversations need attention.** In Codex and Claude Code tabs, a green marker shows a prompt waiting for a reply. An orange marker shows a reply that finished while you were elsewhere and hasn't been viewed yet. Both can appear beside the same worktree or project. If you allow notifications, Codevator can also alert you when a reply finishes.
+- **Create worktrees from the sidebar.** Start from an existing local branch or make a new one. Codevator suggests a folder name, and you can change it before creating the worktree.
 
 ## Get started
 
-You'll need macOS 14 or later and Git. Install Codex or Claude Code separately if you want to use it in Codevator. The downloadable app is unsigned and has not been notarized by Apple, so macOS may ask you to review it before opening. Building from source also requires Xcode.
+You need macOS 14 or later and Git. A regular terminal works without installing an AI tool. To use Codex or Claude Code, install its command-line app on your Mac and sign in through that tool.
 
-1. Download `Codevator-0.1.2-macOS.dmg` from the [release page](https://github.com/LaughingVzr/Codevator/releases/tag/v0.1.2), open it, and drag Codevator to Applications. To build it yourself, clone this repository, open `Codevator.xcodeproj` in Xcode, select the **Codevator** scheme and **My Mac**, then click **Run**.
-2. In the app, click **+** in the sidebar (or press **⌘O**) and choose a local Git project.
-3. Select a worktree and click **Codex** or **Claude** to start a tab. You can also create a blank tab first and choose a tool later.
+1. Get the disk image from [Releases](https://github.com/LaughingVzr/Codevator/releases), open it, and drag Codevator into Applications. The app is currently unsigned and not notarized, so macOS may ask you to review it before opening.
+2. Click **+** in the sidebar, or press **⌘O**, and choose a local Git project.
+3. Select a worktree and click **Codex**, **Claude**, or **Terminal** to open a tab. You can also open a blank tab and choose what to run later.
 
-To create another worktree, right-click a project in the sidebar. Codevator can use an existing branch or create a new one, and it suggests a name that you can change.
+To add another worktree, right-click a project in the sidebar and choose **Create worktree**. The form starts with an existing local branch; switch on **Create new branch** if you need one.
 
-Codevator looks for `codex` and `claude` on your Mac. If a tool is installed somewhere else, you can set its path in **Codevator → Settings → Coding Tools**.
+Codevator looks for `codex` and `claude` on your Mac. If either tool is installed in an unusual location, set its path in **Codevator → Settings → Coding Tools**. The regular terminal uses your Mac's shell.
+
+This README describes the current source code. A downloadable release may not include changes made since it was published. Release packages target both Apple silicon and Intel Macs; Intel hardware has not yet been tested directly.
 
 ## Good to know
 
-- Switching projects or tabs keeps conversations running. Closing a running tab or quitting the app asks before stopping its process.
-- Codevator remembers your projects and selected worktree between launches. It does not yet restore running conversations or terminal history after quitting.
-- Worktree removal is limited to clean, inactive worktrees. Removing a project from the sidebar does not delete its files.
-- The app keeps the tools' own sign-in and approval flows. It does not automatically approve commands for them.
-
-For earlier implementation and test notes, see the [development record](docs/implementation-status.md).
+- Switching projects or tabs leaves their sessions running. Codevator asks before closing a running tab or quitting while sessions are still running.
+- Your projects and selected worktree are remembered when you reopen the app. Running sessions and terminal history are not restored after quitting.
+- Codevator only removes a worktree when it is not the main one and has no running session or changes and new files waiting to be committed. Removing a project from the sidebar leaves its files on disk, but stops its open sessions after you confirm.
+- Codex and Claude Code still handle their own sign-in and command approvals. Codevator does not approve commands for them.
 
 <details>
-<summary>Build and test from Terminal</summary>
+<summary>Build and test from source</summary>
+
+Install Xcode, then open `Codevator.xcodeproj`, select the **Codevator** scheme and **My Mac**, and click **Run**. Or use the Makefile:
 
 ```sh
 make build
 make test
 ```
 
-Run `make test-ui` for the macOS UI tests. Set `XCODEBUILD` if Xcode is installed outside `/Applications/Xcode.app`.
+Run `make test-ui` for macOS interface tests. If Xcode is installed outside `/Applications/Xcode.app`, set `XCODEBUILD` to its `xcodebuild` path.
 
 </details>
 

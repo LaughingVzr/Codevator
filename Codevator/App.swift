@@ -117,6 +117,14 @@ struct CodevatorApp: App {
         }
         .commands {
             CommandGroup(after: .newItem) { Button("添加 Git 项目…") { workspace.chooseProject() }.keyboardShortcut("o") }
+            CommandMenu("终端") {
+                Button("放大终端文字") { workspace.sessions.adjustFontSize(by: 1) }
+                    .keyboardShortcut("+", modifiers: .command)
+                Button("缩小终端文字") { workspace.sessions.adjustFontSize(by: -1) }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("还原终端文字大小") { workspace.sessions.resetFontSize() }
+                    .keyboardShortcut("0", modifiers: .command)
+            }
         }
         Settings {
             AppSettingsView(workspace: workspace, appearance: $appearance, language: $language)
@@ -259,8 +267,13 @@ struct WorkspaceView: View {
                 .font(.caption)
             }
             Spacer(minLength: 4)
+            if workspace.sessions.pendingCount(in: tree.id) > 0 {
+                PendingBadge(count: workspace.sessions.pendingCount(in: tree.id))
+                    .accessibilityIdentifier("worktreePending-\(tree.path)")
+            }
             if workspace.sessions.unreadCount(in: tree.id) > 0 {
                 CompletionBadge(count: workspace.sessions.unreadCount(in: tree.id))
+                    .accessibilityIdentifier("worktreeCompleted-\(tree.path)")
             }
         }
     }
@@ -281,8 +294,13 @@ struct WorkspaceView: View {
             Text(project.name).fontWeight(.medium)
             if workspace.busy.contains(project.id) { ProgressView().controlSize(.small) }
             Spacer(minLength: 4)
+            if workspace.sessions.pendingCount(forProject: project.id) > 0 {
+                PendingBadge(count: workspace.sessions.pendingCount(forProject: project.id))
+                    .accessibilityIdentifier("projectPending-\(project.id)")
+            }
             if workspace.sessions.unreadCount(forProject: project.id) > 0 {
                 CompletionBadge(count: workspace.sessions.unreadCount(forProject: project.id))
+                    .accessibilityIdentifier("projectCompleted-\(project.id)")
             }
         }
     }
@@ -359,7 +377,8 @@ struct WorktreeDetail: View {
                                         Text(tabTitle(tab))
                                         if manager.unreadCompletions.contains(tab.id) {
                                             Circle().fill(.orange).frame(width: 6, height: 6)
-                                        } else if manager.sessions[tab.id]?.active == true {
+                                        }
+                                        if manager.sessions[tab.id]?.awaitingResponse == true {
                                             Circle().fill(.green).frame(width: 5, height: 5)
                                         }
                                     }.padding(.horizontal, 8).padding(.vertical, 6)
@@ -383,7 +402,7 @@ struct WorktreeDetail: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("新建空白标签")
-                        .help("先创建标签，再选择编程工具")
+                        .help("先创建标签，再选择工具")
                         .padding(.leading, 2)
                     }.padding(.horizontal, 8).padding(.vertical, 4)
                 }
@@ -407,9 +426,9 @@ struct WorktreeDetail: View {
                     }
                 } else {
                     ContentUnavailableView {
-                        Label("选择编程工具", systemImage: "terminal")
+                        Label("选择工具", systemImage: "terminal")
                     } description: {
-                        Text("在此标签中启动 Codex 或 Claude。")
+                        Text("在此标签中启动 Codex、Claude 或终端。")
                     } actions: {
                         HStack {
                             ForEach(CLIProvider.allCases) { provider in
@@ -428,6 +447,22 @@ struct WorktreeDetail: View {
     }
 }
 
+private struct PendingBadge: View {
+    let count: Int
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(.green).frame(width: 6, height: 6)
+            Text(String(count))
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.green)
+        }
+        .padding(.horizontal, 6).padding(.vertical, 3)
+        .background(Color.green.opacity(0.13), in: Capsule())
+        .accessibilityLabel("\(count) 个会话正在等待回复")
+        .help("\(count) 个会话正在等待回复")
+    }
+}
+
 private struct CompletionBadge: View {
     let count: Int
     var body: some View {
@@ -437,15 +472,30 @@ private struct CompletionBadge: View {
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Color.orange, in: Capsule())
             .accessibilityLabel("\(count) 个已完成的会话待查看")
+            .help("\(count) 个已完成的会话待查看")
     }
 }
 
 struct CLIProviderIcon: View {
     let provider: CLIProvider
+    private var symbol: String {
+        switch provider {
+        case .codex: "chevron.left.forwardslash.chevron.right"
+        case .claude: "asterisk"
+        case .terminal: "terminal"
+        }
+    }
+    private var tint: Color {
+        switch provider {
+        case .codex: .teal
+        case .claude: Color(red: 0.85, green: 0.42, blue: 0.27)
+        case .terminal: .secondary
+        }
+    }
     var body: some View {
-        Image(systemName: provider == .codex ? "chevron.left.forwardslash.chevron.right" : "asterisk")
+        Image(systemName: symbol)
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(provider == .codex ? Color.teal : Color(red: 0.85, green: 0.42, blue: 0.27))
+            .foregroundStyle(tint)
             .frame(width: 16, height: 16)
             .accessibilityHidden(true)
     }
@@ -539,7 +589,7 @@ struct CreateWorktreeView: View {
 }
 
 private enum SettingsSection: Hashable {
-    case appearance, language, notifications, tools
+    case appearance, language, terminal, notifications, tools
 }
 
 struct AppSettingsView: View {
@@ -555,6 +605,8 @@ struct AppSettingsView: View {
                     .tag(SettingsSection.appearance)
                 Label("语言", systemImage: "character.bubble")
                     .tag(SettingsSection.language)
+                Label("终端", systemImage: "textformat.size")
+                    .tag(SettingsSection.terminal)
                 Label("通知", systemImage: "bell.badge")
                     .tag(SettingsSection.notifications)
                 Label("编程工具", systemImage: "terminal")
@@ -570,6 +622,8 @@ struct AppSettingsView: View {
                     AppearanceSettings(appearance: $appearance)
                 case .language:
                     LanguageSettings(language: $language)
+                case .terminal:
+                    TerminalSettings(sessions: workspace.sessions)
                 case .notifications:
                     NotificationSettings()
                 case .tools:
@@ -583,6 +637,47 @@ struct AppSettingsView: View {
         .frame(minWidth: 700, minHeight: 400)
         .toolbarBackground(AppSurface.content(for: colorScheme), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
+    }
+}
+
+private struct TerminalSettings: View {
+    @ObservedObject var sessions: SessionManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("终端文字大小").font(.title2.weight(.semibold))
+            Text("调整所有终端的文字大小。已打开的标签会立即更新。")
+                .foregroundStyle(.secondary)
+            HStack(spacing: 14) {
+                Button { sessions.adjustFontSize(by: -1) } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 28, height: 28)
+                }
+                .accessibilityLabel("缩小终端文字")
+                .disabled(sessions.fontSize == TerminalFontSize.range.lowerBound)
+
+                Text("\(sessions.fontSize) pt")
+                    .font(.system(.title3, design: .monospaced))
+                    .frame(minWidth: 70)
+                    .accessibilityIdentifier("terminalFontSize")
+
+                Button { sessions.adjustFontSize(by: 1) } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 28, height: 28)
+                }
+                .accessibilityLabel("放大终端文字")
+                .disabled(sessions.fontSize == TerminalFontSize.range.upperBound)
+
+                Button("还原默认大小") { sessions.resetFontSize() }
+                    .padding(.leading, 8)
+                    .disabled(sessions.fontSize == TerminalFontSize.defaultValue)
+            }
+            Text("也可以使用 ⌘+、⌘− 和 ⌘0 调整。")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -727,14 +822,14 @@ struct CLISettings: View {
     @State private var result = ""
     var body: some View {
         Form {
-            ForEach(CLIProvider.allCases) { provider in
+            ForEach(CLIProvider.aiCases) { provider in
                 TextField(provider.title + tr(" 绝对路径（留空自动检测）"), text: Binding(get: { workspace.configuration.cliPaths[provider.rawValue] ?? "" }, set: { workspace.configuration.cliPaths[provider.rawValue] = $0; workspace.save() }))
             }
             Button("重新检测 CLI") {
                 Task {
                     await workspace.sessions.resolver.invalidate()
                     var lines: [String] = []
-                    for provider in CLIProvider.allCases {
+                    for provider in CLIProvider.aiCases {
                         do { let (path, _) = try await workspace.sessions.resolver.resolve(provider, override: workspace.configuration.cliPaths[provider.rawValue]); lines.append(provider.title + "：" + path) }
                         catch { lines.append(provider.title + "：" + error.localizedDescription) }
                     }

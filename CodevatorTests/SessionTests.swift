@@ -92,6 +92,30 @@ final class SessionTests: XCTestCase {
         XCTAssertFalse(manager.sessions[failed.id]?.active == true)
         await manager.remove(tree.id)
     }
+    func testPlainTerminalStartsInWorktreeWithoutAIIndicators() async throws {
+        let tree = try tree("plain-terminal"), manager = SessionManager()
+        let tab = manager.createTab(for: tree.id, provider: .terminal)
+        var completions = 0
+        manager.onTurnCompleted = { _, _ in completions += 1 }
+        // A configured AI path must not affect the plain shell.
+        await manager.start(tree, tabID: tab.id, provider: .terminal, override: "/not/a/real/cli")
+        let session = try XCTUnwrap(manager.sessions[tab.id])
+        XCTAssertTrue(session.active, session.state)
+        XCTAssertEqual(session.provider, .terminal)
+        let cwdFile = URL(fileURLWithPath: tree.path).appendingPathComponent("shell-cwd.txt")
+        session.terminal.process.send(data: Array("pwd > shell-cwd.txt; printf 'SHELL_READY\\n'\n".utf8)[...])
+        let ready = await waitFor({ FileManager.default.fileExists(atPath: cwdFile.path) && self.text(session).contains("SHELL_READY") }, timeout: 12)
+        XCTAssertTrue(ready, text(session))
+        let actualDirectory = try String(contentsOf: cwdFile).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(URL(fileURLWithPath: actualDirectory).resolvingSymlinksInPath().path,
+                       URL(fileURLWithPath: tree.path).resolvingSymlinksInPath().path)
+        XCTAssertFalse(session.awaitingResponse)
+        XCTAssertEqual(manager.pendingCount(in: tree.id), 0)
+        XCTAssertEqual(manager.unreadCount(in: tree.id), 0)
+        XCTAssertEqual(completions, 0)
+        await manager.stop(tab.id)
+        XCTAssertFalse(session.active)
+    }
     func testMultipleTabsInOneWorktreeStayIndependent() async throws {
         let tree = try tree("shared"), manager = SessionManager()
         let codex = manager.createTab(for: tree.id, provider: .codex)
@@ -120,6 +144,38 @@ final class SessionTests: XCTestCase {
         XCTAssertFalse(second.active)
         XCTAssertFalse(third.active)
         XCTAssertTrue(manager.tabs(for: tree.id).isEmpty)
+    }
+    func testTerminalFontSizeUpdatesOpenTabsAndPersistsForNewTabs() async throws {
+        let suite = "CodevatorFontTests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = SessionManager(defaults: defaults)
+        let tree = try tree("font-size")
+        let firstTab = manager.createTab(for: tree.id)
+        await manager.start(tree, tabID: firstTab.id, provider: .codex, override: "/bin/cat")
+        let first = try XCTUnwrap(manager.sessions[firstTab.id])
+        let pid = first.terminal.process.shellPid
+        first.terminal.feed(text: "Visible before zoom")
+
+        manager.setFontSize(17)
+        XCTAssertEqual(first.terminal.font.pointSize, 17)
+        XCTAssertEqual(first.terminal.process.shellPid, pid)
+        XCTAssertTrue(text(first).contains("Visible before zoom"))
+
+        let secondTab = manager.createTab(for: tree.id)
+        await manager.start(tree, tabID: secondTab.id, provider: .claude, override: "/bin/cat")
+        let second = try XCTUnwrap(manager.sessions[secondTab.id])
+        XCTAssertEqual(second.terminal.font.pointSize, 17)
+        XCTAssertEqual(SessionManager(defaults: defaults).fontSize, 17)
+
+        manager.adjustFontSize(by: -1)
+        XCTAssertEqual(first.terminal.font.pointSize, 16)
+        XCTAssertEqual(second.terminal.font.pointSize, 16)
+        manager.setFontSize(100)
+        XCTAssertEqual(manager.fontSize, TerminalFontSize.range.upperBound)
+        manager.resetFontSize()
+        XCTAssertEqual(manager.fontSize, TerminalFontSize.defaultValue)
+        await manager.stopAll()
     }
     func testBlankTabCanChooseProviderLater() async throws {
         let tree = try tree("blank"), manager = SessionManager()
@@ -181,6 +237,54 @@ final class SessionTests: XCTestCase {
         let settings = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(claudeArgs.last).utf8)) as? [String: Any])
         XCTAssertNotNil(settings["hooks"])
         claude.fail("测试结束")
+    }
+    func testPendingAndUnreadIndicatorsCoexistAcrossWorktrees() async throws {
+        let firstTree = try tree("pending-and-completed")
+        let secondPath = try tree("another-project").path
+        let secondTree = Worktree(projectID: "another-project", path: secondPath, branch: "main")
+        let manager = SessionManager()
+
+        func trackedSession(for tree: Worktree) throws -> (TerminalSession, String) {
+            let session = TerminalSession(tree: tree, provider: .codex)
+            let arguments = session.completionArguments(for: "/opt/homebrew/bin/codex")
+            let payload = try XCTUnwrap(arguments.last?.replacingOccurrences(of: "notify=", with: ""))
+            let command = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String])
+            let marker = try XCTUnwrap(command.last)
+            session.launch(executable: "/bin/cat", environment: ["PATH": "/usr/bin:/bin"])
+            return (session, marker)
+        }
+
+        let waitingTab = manager.createTab(for: firstTree.id)
+        let completedTab = manager.createTab(for: firstTree.id)
+        let otherTab = manager.createTab(for: secondTree.id)
+        let (waiting, _) = try trackedSession(for: firstTree)
+        let (completed, marker) = try trackedSession(for: firstTree)
+        let (other, _) = try trackedSession(for: secondTree)
+        manager.sessions[waitingTab.id] = waiting
+        manager.sessions[completedTab.id] = completed
+        manager.sessions[otherTab.id] = other
+        defer { Task { await manager.stopAll() } }
+
+        XCTAssertEqual(manager.pendingCount(in: firstTree.id), 0)
+        waiting.terminal.insertText("first prompt\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        completed.terminal.insertText("second prompt\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        other.terminal.insertText("other prompt\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(manager.pendingCount(in: firstTree.id), 2)
+        XCTAssertEqual(manager.pendingCount(forProject: firstTree.projectID), 2)
+        XCTAssertEqual(manager.pendingCount(forProject: secondTree.projectID), 1)
+
+        try Data("x".utf8).write(to: URL(fileURLWithPath: marker))
+        completed.checkCompletions()
+        manager.markUnread(completedTab.id)
+        XCTAssertEqual(manager.pendingCount(in: firstTree.id), 1)
+        XCTAssertEqual(manager.unreadCount(in: firstTree.id), 1)
+        XCTAssertEqual(manager.pendingCount(forProject: firstTree.projectID), 1)
+        XCTAssertEqual(manager.unreadCount(forProject: firstTree.projectID), 1)
+        XCTAssertEqual(manager.pendingCount(forProject: secondTree.projectID), 1)
+        await manager.close(waitingTab.id)
+        XCTAssertEqual(manager.pendingCount(in: firstTree.id), 0)
+        XCTAssertEqual(manager.unreadCount(in: firstTree.id), 1)
+        await manager.stopAll()
     }
     func testInstalledCodexAndClaudeStartupWithoutApproval() async throws {
         let executables: [(CLIProvider, String)] = [(.codex, "/opt/homebrew/bin/codex"), (.claude, "/opt/homebrew/bin/claude")]

@@ -45,6 +45,7 @@ final class Workspace: ObservableObject {
         NSApp.dockTile.display()
     }
     private func turnCompleted(tabID: String, session: TerminalSession) {
+        guard session.provider != .terminal else { return }
         guard sessions.tabs(for: session.treeID).contains(where: { $0.id == tabID }) else { return }
         let visible = NSApp.isActive && NSApp.keyWindow?.title == "Codevator" &&
             selection == session.treeID && sessions.selectedTabIDs[session.treeID] == tabID
@@ -128,7 +129,7 @@ final class Workspace: ObservableObject {
     func startSession(_ tree: Worktree, tabID: String, provider: CLIProvider) async {
         do {
             guard !tree.unavailable, !busy.contains(tree.projectID) else { throw WorkspaceError(tr("工作目录不可用或正在修改")) }
-            CompletionNotifier.prepare()
+            if provider != .terminal { CompletionNotifier.prepare() }
             let actual = try await git.register(tree.path)
             guard actual.id == tree.projectID, !busy.contains(tree.projectID),
                   configuration.projects.contains(where: { $0.id == tree.projectID }) else {
