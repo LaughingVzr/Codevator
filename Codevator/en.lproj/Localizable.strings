@@ -114,6 +114,9 @@
 "粘贴" = "Paste";
 "失败：无法创建 PTY 进程" = "Failed: could not create PTY process";
 "运行中" = "Running";
+"已就绪" = "Ready";
+"回复中" = "Responding";
+"已完成" = "Completed";
 "失败：" = "Failed: ";
 "正在停止" = "Stopping";
 "已停止" = "Stopped";

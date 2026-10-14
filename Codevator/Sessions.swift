@@ -5,20 +5,56 @@ import Combine
 
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
-    var onSubmittedInput: (() -> Void)?
+    var onSubmittedInput: ((String) -> Void)?
+    var onInterruptedInput: (() -> Void)?
+    var onPermissionSelectionCompleted: (() -> Void)?
+    var onPermissionMenuOpened: (() -> Void)?
+    var onScreenUpdated: (() -> Void)?
+    private var draftInput = ""
+    private var recentOutput = ""
     var refreshWholeSurfaceAfterOutput = false
     private var wholeSurfaceRefreshScheduled = false
+    private var lastOutputTime: UInt64 = 0
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
-        guard refreshWholeSurfaceAfterOutput, !wholeSurfaceRefreshScheduled else { return }
+        if onPermissionSelectionCompleted != nil {
+            recentOutput = String((recentOutput + String(decoding: slice, as: UTF8.self)).suffix(512))
+            let readableOutput = recentOutput.replacingOccurrences(
+                of: "\u{1B}\\[[0-?]*[ -/]*[@-~]", with: "", options: .regularExpression
+            )
+            if readableOutput.contains("Permission selection requested:") {
+                recentOutput = ""
+                draftInput = ""
+                onPermissionSelectionCompleted?()
+            } else if readableOutput.contains("Update Model Permissions") {
+                // Codex can redraw a command entered after shell-style line
+                // edits, so the locally tracked draft is not always reliable.
+                recentOutput = ""
+                draftInput = ""
+                onPermissionMenuOpened?()
+            }
+        }
+        onScreenUpdated?()
+        guard refreshWholeSurfaceAfterOutput else { return }
+        lastOutputTime = DispatchTime.now().uptimeNanoseconds
+        scheduleWholeSurfaceRefresh()
+    }
+
+    private func scheduleWholeSurfaceRefresh() {
+        guard !wholeSurfaceRefreshScheduled else { return }
         wholeSurfaceRefreshScheduled = true
-        // Codex frequently rewrites small parts of CJK-heavy output. A final
-        // full repaint clears cells left behind by partial AppKit redraws.
+        // SwiftTerm queues its own display update after receiving bytes. Keep
+        // repainting during a stream and once more after the last queued update,
+        // so a late partial draw cannot overwrite the final full repaint.
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(60)) { [weak self] in
             guard let self else { return }
             self.wholeSurfaceRefreshScheduled = false
             self.setNeedsDisplay(self.bounds)
+            let elapsed = DispatchTime.now().uptimeNanoseconds - self.lastOutputTime
+            if elapsed < 100_000_000 {
+                self.scheduleWholeSurfaceRefresh()
+            }
         }
     }
 
@@ -29,8 +65,24 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         // sequence when a CLI enables enhanced keyboard reporting.
         if data.contains(10) || data.contains(13) ||
             encoded == "\u{1B}[13u" || encoded == "\u{1B}[13;1u" {
-            onSubmittedInput?()
+            onSubmittedInput?(draftInput)
+            draftInput = ""
+        } else if data.contains(3) || encoded == "\u{1B}" || encoded == "\u{1B}[27u" {
+            draftInput = ""
+            onInterruptedInput?()
+        } else if data.contains(8) || data.contains(127) {
+            if !draftInput.isEmpty { draftInput.removeLast() }
         }
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if let text = string as? String { draftInput += text }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    override func paste(_ sender: Any) {
+        if let text = NSPasteboard.general.string(forType: .string) { draftInput += text }
+        super.paste(sender)
     }
 
     override func viewDidMoveToWindow() {
@@ -149,6 +201,8 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     private var completionTimer: Timer?
     private var completionLength: UInt64 = 0
     private var completionTrackingEnabled = false
+    private var selectingCodexPermission = false
+    private var codexPermissionMenuWasVisible = false
     var onTurnCompleted: (() -> Void)?
     var hasManagedProcesses: Bool { active || stopping || (processGroup > 0 && kill(-processGroup, 0) == 0) }
 
@@ -170,11 +224,67 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         terminal.nativeForegroundColor = NSColor(calibratedWhite: 0.9, alpha: 1)
         terminal.nativeBackgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1)
         super.init(); terminal.processDelegate = self
-        terminal.onSubmittedInput = { [weak self] in self?.markSubmittedInput() }
+        terminal.onSubmittedInput = { [weak self] input in self?.markSubmittedInput(input) }
+        terminal.onInterruptedInput = { [weak self] in self?.markInterruptedInput() }
+        if provider == .codex {
+            terminal.onPermissionSelectionCompleted = { [weak self] in self?.finishCodexPermissionSelection() }
+            terminal.onPermissionMenuOpened = { [weak self] in self?.beginCodexPermissionSelection() }
+            terminal.onScreenUpdated = { [weak self] in self?.checkCodexPermissionMenu() }
+        }
     }
-    private func markSubmittedInput() {
+    private func markSubmittedInput(_ input: String) {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if provider == .codex {
+            let command = text.lowercased()
+            if command == "/permission" || command == "/permissions" ||
+                (command.count >= 5 && "/permissions".hasPrefix(command)) {
+                selectingCodexPermission = true
+                codexPermissionMenuWasVisible = false
+                return
+            }
+            if selectingCodexPermission {
+                return
+            }
+        }
+        guard !text.isEmpty else { return }
         guard completionTrackingEnabled, active, !stopping, terminal.process.running else { return }
         awaitingResponse = true
+        state = tr("回复中")
+    }
+    private func finishCodexPermissionSelection() {
+        selectingCodexPermission = false
+        codexPermissionMenuWasVisible = false
+        // The permission menu is local CLI interaction, not an agent turn. A
+        // menu key can be mistaken for a submitted prompt when Codex redraws
+        // its input area; the result line is authoritative for this flow.
+        awaitingResponse = false
+        state = tr("已就绪")
+    }
+    private func beginCodexPermissionSelection() {
+        selectingCodexPermission = true
+        codexPermissionMenuWasVisible = true
+        awaitingResponse = false
+        state = tr("已就绪")
+    }
+    private func checkCodexPermissionMenu() {
+        guard selectingCodexPermission,
+              let screen = terminal.accessibilityValue() as? String else { return }
+        let menu = screen.range(of: "Update Model Permissions", options: .backwards)
+        let prompt = screen.range(of: "Ask Codex to do anything", options: .backwards)
+        if let menu, prompt == nil || prompt!.lowerBound < menu.lowerBound {
+            codexPermissionMenuWasVisible = true
+        } else if codexPermissionMenuWasVisible && prompt != nil {
+            // Choosing the already active permission returns to the prompt
+            // without printing a selection-result line.
+            finishCodexPermissionSelection()
+        }
+    }
+    private func markInterruptedInput() {
+        selectingCodexPermission = false
+        codexPermissionMenuWasVisible = false
+        guard awaitingResponse else { return }
+        awaitingResponse = false
+        state = tr("已就绪")
     }
     func setFontSize(_ size: Int) {
         guard Int(terminal.font.pointSize) != size else { return }
@@ -188,7 +298,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         // forkpty establishes a new session/group in the child. getpgid queried
         // immediately in the parent races that setup, so retain the known group ID.
         processGroup = pid
-        state = tr("运行中")
+        state = provider == .terminal ? tr("运行中") : tr("已就绪")
     }
     func completionArguments(for executable: String) -> [String] {
         let name = URL(fileURLWithPath: executable).lastPathComponent
@@ -235,7 +345,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         let length = size.uint64Value
         guard length > completionLength else { return }
         completionLength = length
+        guard awaitingResponse else { return }
         awaitingResponse = false
+        state = tr("已完成")
         onTurnCompleted?()
     }
     private func stopCompletionMonitor() {

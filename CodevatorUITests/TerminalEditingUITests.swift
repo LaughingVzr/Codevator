@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import ApplicationServices
 
 final class TerminalEditingUITests: XCTestCase {
     func testWorktreeShowsPendingAndUnreadBadgesTogether() throws {
@@ -22,7 +23,12 @@ final class TerminalEditingUITests: XCTestCase {
         finish = os.path.join(os.path.dirname(__file__), "complete-now")
         print("READY", flush=True)
         for line in sys.stdin:
-            if line.strip() == "complete":
+            if line.strip() == "/permission":
+                print("Choose permission level", flush=True)
+            elif line.strip() == "1":
+                print("Permission selection requested: Full Access", flush=True)
+                print("Ask Codex to do anything", flush=True)
+            elif line.strip() == "complete":
                 deadline = time.time() + 20
                 while not os.path.exists(finish) and time.time() < deadline:
                     time.sleep(0.05)
@@ -59,13 +65,28 @@ final class TerminalEditingUITests: XCTestCase {
         XCTAssertTrue(terminal.waitForExistence(timeout: 20))
         let ready = NSPredicate { _, _ in (terminal.value as? String)?.contains("READY") == true }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: terminal)], timeout: 10), .completed)
+        let pending = app.descendants(matching: .any).matching(identifier: "worktreePending-\(fixture)").firstMatch
+        XCTAssertFalse(pending.exists)
         terminal.click()
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertFalse(pending.exists)
+        clipboard.clearContents()
+        clipboard.setString("/permission", forType: .string)
+        app.typeKey("v", modifierFlags: .command)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertFalse(pending.exists)
+        clipboard.clearContents()
+        clipboard.setString("1", forType: .string)
+        app.typeKey("v", modifierFlags: .command)
+        app.typeKey(.return, modifierFlags: [])
+        let permissionResult = NSPredicate { _, _ in (terminal.value as? String)?.contains("Permission selection requested: Full Access") == true }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: permissionResult, object: terminal)], timeout: 10), .completed)
+        XCTAssertFalse(pending.exists)
         clipboard.clearContents()
         clipboard.setString("pending", forType: .string)
         app.typeKey("v", modifierFlags: .command)
         app.typeKey(.return, modifierFlags: [])
 
-        let pending = app.descendants(matching: .any).matching(identifier: "worktreePending-\(fixture)").firstMatch
         XCTAssertTrue(pending.waitForExistence(timeout: 10))
         createCodex.click()
         XCTAssertTrue(app.buttons["Codex 2 标签"].waitForExistence(timeout: 20))
@@ -97,8 +118,7 @@ final class TerminalEditingUITests: XCTestCase {
         app.launch()
         addTeardownBlock { app.terminate() }
         focus(app)
-        app.menuBars.menuBarItems["Codevator"].click()
-        app.menuItems["设置…"].click()
+        try openSettingsMenu()
         let settings = app.windows.matching(NSPredicate(format: "title != 'Codevator'")).firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         let terminalSection = settings.staticTexts["终端"]
@@ -253,6 +273,27 @@ final class TerminalEditingUITests: XCTestCase {
         }
         expectation(for: pasted, evaluatedWith: terminal)
         waitForExpectations(timeout: 10)
+        if provider == "Codex" {
+            key("a", modifiers: .control, app: app)
+            key("k", modifiers: .control, app: app)
+            clipboard.clearContents()
+            clipboard.setString("/permission", forType: .string)
+            key("v", modifiers: .command, app: app)
+            key(.return, modifiers: [], app: app)
+            let permissionMenu = NSPredicate { _, _ in
+                (terminal.value as? String)?.contains("Update Model Permissions") == true
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: permissionMenu, object: terminal)], timeout: 10), .completed,
+                           "Codex did not show the permission menu: \(terminal.value ?? "")")
+            key(.return, modifiers: [], app: app)
+            let readyAgain = NSPredicate { _, _ in
+                (terminal.value as? String)?.contains("Ask Codex to do anything") == true
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: readyAgain, object: terminal)], timeout: 10), .completed,
+                           "Codex did not return from the permission menu: \(terminal.value ?? "")")
+            let pending = app.descendants(matching: .any).matching(identifier: "worktreePending-\(fixture)").firstMatch
+            XCTAssertFalse(pending.exists, "Permission selection must not count as an AI turn")
+        }
         app.buttons["停止"].click()
         stopped = true
     }
@@ -271,5 +312,26 @@ final class TerminalEditingUITests: XCTestCase {
         app.activate()
         XCTAssertEqual(app.state, .runningForeground)
         XCTAssertTrue(NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "dev.codeelevator.CodeElevator", "The test app must own keyboard focus before synthesizing input")
+    }
+
+    private func openSettingsMenu() throws {
+        let pid = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.processIdentifier)
+        let application = AXUIElementCreateApplication(pid)
+        func value(of element: AXUIElement, attribute: String) -> CFTypeRef? {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+            return value
+        }
+        func children(of element: AXUIElement) -> [AXUIElement] {
+            value(of: element, attribute: kAXChildrenAttribute) as? [AXUIElement] ?? []
+        }
+        func title(of element: AXUIElement) -> String? {
+            value(of: element, attribute: kAXTitleAttribute) as? String
+        }
+        let menuBar = try XCTUnwrap(value(of: application, attribute: kAXMenuBarAttribute)) as! AXUIElement
+        let appMenu = try XCTUnwrap(children(of: menuBar).first { title(of: $0) == "Codevator" })
+        XCTAssertEqual(AXUIElementPerformAction(appMenu, kAXPressAction as CFString), .success)
+        let settings = try XCTUnwrap(children(of: appMenu).flatMap { children(of: $0) }.first { title(of: $0) == "设置…" })
+        XCTAssertEqual(AXUIElementPerformAction(settings, kAXPressAction as CFString), .success)
     }
 }
