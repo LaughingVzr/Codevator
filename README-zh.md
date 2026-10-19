@@ -14,18 +14,24 @@ Codevator 让不同的编程任务各有自己的位置。左侧放本机 Git �
   <img src="docs/screenshots/codevator-ocean.png" alt="Codevator 中的项目、worktree 和 Codex 对话" width="960" />
 </p>
 
+在 macOS 26 上，侧边栏、工具栏和标签采用 Liquid Glass 效果；终端仍保持深色，方便阅读对话。下图使用示例项目，并为展示效果更换了背景。
+
+<p align="center">
+  <img src="docs/screenshots/codevator-liquid-glass.png" alt="Codevator 浅色 Liquid Glass 界面，展示示例项目、worktree 和终端" width="960" />
+</p>
+
 ## 可以用它做什么
 
 - **在项目之间切换，不用重新找工作现场。** 侧边栏列出项目及其 worktree。你可以把 worktree 理解为同一 Git 项目的另一个工作文件夹：在别的分支上工作时，不会打乱主目录。
 - **为每项任务开独立标签。** 在选中的 worktree 中启动 Codex、Claude Code 或普通终端。同一个 worktree 也能同时打开多个标签，稍后再切回来。
-- **看清哪些对话还需要关注。** 在 Codex 和 Claude Code 标签中，绿色提示表示发出的提问正在等待回复；橙色提示表示回复已经完成、但你还没查看。两种提示可以同时出现在同一个 worktree 或项目旁。允许通知后，后台回复完成时还可以收到 macOS 提醒。
+- **一眼找到还开着的会话。** 有终端标签的 worktree 会显示终端标识。在 Codex 和 Claude Code 标签中，绿色表示提问正在等待回复；橙色表示回复已完成、但你还没查看。两种提示可以同时出现在同一个 worktree 或项目旁。回复完成时可以播放提示音；允许通知后，后台完成的回复也会弹出 macOS 提醒。
 - **直接从侧边栏创建 worktree。** 可以选择已有的本地分支，也可以创建新分支。应用会推荐文件夹名称，创建前仍可自行修改。
 
 ## 开始使用
 
 需要 macOS 14 或更新版本，以及 Git。只用普通终端时，不需要安装 AI 工具；如果要使用 Codex 或 Claude Code，请先在 Mac 上安装对应的命令行工具，并通过工具本身登录。
 
-1. 从[发布页面](https://github.com/LaughingVzr/Codevator/releases)下载磁盘映像，打开后把 Codevator 拖入「应用程序」。应用目前没有签名，也未经过 Apple 公证，首次打开时 macOS 可能要求你确认。
+1. 从[发布页面](https://github.com/LaughingVzr/Codevator/releases)下载磁盘映像，打开后把 Codevator 拖入「应用程序」。应用目前使用临时签名，尚未经过 Apple 公证，首次打开时 macOS 可能要求你确认。
 2. 点击侧边栏的 **+**，或按 **⌘O**，选择本机已有的 Git 项目。
 3. 选中一个 worktree，点击 **Codex**、**Claude** 或 **终端** 打开标签。也可以先开空白标签，之后再选要运行的工具。
 

@@ -308,6 +308,36 @@ final class TerminalEditingUITests: XCTestCase {
             key("a", modifiers: .control, app: app)
             key("k", modifiers: .control, app: app)
             clipboard.clearContents()
+            clipboard.setString("middle", forType: .string)
+            key("v", modifiers: .command, app: app)
+            let middleShown = NSPredicate { _, _ in
+                (terminal.value as? String)?.contains("middle") == true
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: middleShown, object: terminal)], timeout: 10), .completed,
+                           "Codex did not show navigation test input: \(terminal.value ?? "")")
+            key(.leftArrow, modifiers: .command, app: app)
+            clipboard.clearContents()
+            clipboard.setString("A", forType: .string)
+            key("v", modifiers: .command, app: app)
+            let prefixShown = NSPredicate { _, _ in
+                (terminal.value as? String)?.contains("Amiddle") == true
+            }
+            let prefixTrace = (try? String(contentsOfFile: config.path + ".editing-trace", encoding: .utf8)) ?? "No editing trace"
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: prefixShown, object: terminal)], timeout: 10), .completed,
+                           "Command-left did not move to line start: \(terminal.value ?? ""); \(prefixTrace)")
+            key(.rightArrow, modifiers: .command, app: app)
+            clipboard.clearContents()
+            clipboard.setString("Z", forType: .string)
+            key("v", modifiers: .command, app: app)
+            let navigated = NSPredicate { _, _ in
+                (terminal.value as? String)?.contains("AmiddleZ") == true
+            }
+            let navigationTrace = (try? String(contentsOfFile: config.path + ".editing-trace", encoding: .utf8)) ?? "No editing trace"
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: navigated, object: terminal)], timeout: 10), .completed,
+                           "Command-arrows did not move within Codex's input line: \(terminal.value ?? ""); \(navigationTrace)")
+            key("a", modifiers: .control, app: app)
+            key("k", modifiers: .control, app: app)
+            clipboard.clearContents()
             clipboard.setString("/permission", forType: .string)
             key("v", modifiers: .command, app: app)
             key(.return, modifiers: [], app: app)

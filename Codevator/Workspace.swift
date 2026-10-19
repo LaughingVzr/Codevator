@@ -230,7 +230,8 @@ private enum CompletionNotifier {
         authorizationTask = Task {
             let center = UNUserNotificationCenter.current()
             guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
-            _ = try? await center.requestAuthorization(options: [.alert])
+            do { _ = try await center.requestAuthorization(options: [.alert]) }
+            catch { NSLog("Codevator could not request notification authorization: %@", error.localizedDescription) }
         }
     }
 

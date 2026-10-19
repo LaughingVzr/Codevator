@@ -428,6 +428,26 @@ final class SessionTests: XCTestCase {
         let exited = await waitFor { !session.active }; XCTAssertTrue(exited)
         await session.stop()
     }
+    func testCommandArrowsSendLineNavigationToEveryCLI() async throws {
+        for provider in [CLIProvider.terminal, .codex, .claude] {
+            let session = TerminalSession(tree: try tree("command-arrows-" + provider.rawValue), provider: provider)
+            session.launch(executable: "/bin/sh", environment: ["PATH": "/usr/bin:/bin"], args: ["-c", "stty -icanon -echo; echo READY; dd bs=1 count=2 2>/dev/null | od -An -tx1; echo DONE"])
+            let ready = await waitFor { self.text(session).contains("READY") }
+            XCTAssertTrue(ready, provider.title)
+            for (keyCode, character) in [(UInt16(123), "\u{F702}"), (UInt16(124), "\u{F703}")] {
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                    modifierFlags: [.command], timestamp: 0, windowNumber: 0, context: nil,
+                    characters: character, charactersIgnoringModifiers: character,
+                    isARepeat: false, keyCode: keyCode))
+                XCTAssertTrue(session.terminal.performKeyEquivalent(with: event), provider.title)
+            }
+            let received = await waitFor { self.text(session).contains("DONE") }
+            XCTAssertTrue(received, provider.title + ": " + text(session))
+            XCTAssertTrue(text(session).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").contains("01 05"),
+                          provider.title + ": " + text(session))
+            await session.stop()
+        }
+    }
     func testMarkedTextCommitsOnlyAfterInputMethodConfirmation() async throws {
         let session = TerminalSession(tree: try tree("ime"), provider: .codex)
         session.launch(executable: "/bin/cat", environment: ["PATH": "/usr/bin:/bin", "LC_CTYPE": "UTF-8"])

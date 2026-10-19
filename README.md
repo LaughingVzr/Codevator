@@ -14,18 +14,24 @@ Codevator gives each coding task its own place. Keep your Git projects and workt
   <img src="docs/screenshots/codevator-ocean.png" alt="Codevator showing projects, worktrees, and a Codex conversation" width="960" />
 </p>
 
+On macOS 26, Liquid Glass gives the sidebar, toolbar, and tabs a translucent look. The terminal keeps its dark background so conversations stay easy to read. This view uses sample projects and a presentation backdrop.
+
+<p align="center">
+  <img src="docs/screenshots/codevator-liquid-glass.png" alt="Codevator light Liquid Glass interface with sample projects, worktrees, and a terminal" width="960" />
+</p>
+
 ## What you can do
 
 - **Move between projects without losing your place.** See your projects and their worktrees in the sidebar. A worktree is a separate working folder for the same Git project, so you can work on another branch without disturbing your main folder.
 - **Give each task its own tab.** Open Codex, Claude Code, or a regular terminal in the selected worktree. Open more than one tab, even in the same worktree, and return to them later.
-- **See which conversations need attention.** In Codex and Claude Code tabs, a green marker shows a prompt waiting for a reply. An orange marker shows a reply that finished while you were elsewhere and hasn't been viewed yet. Both can appear beside the same worktree or project. If you allow notifications, Codevator can also alert you when a reply finishes.
+- **See where you left a session running.** A terminal icon marks worktrees with open tabs. In Codex and Claude Code tabs, green shows a prompt waiting for a reply; orange shows a reply that finished while you were elsewhere and has not been viewed yet. Both can appear beside the same worktree or project. Codevator can play a sound when a reply finishes and, if you allow notifications, alert you when it finishes in the background.
 - **Create worktrees from the sidebar.** Start from an existing local branch or make a new one. Codevator suggests a folder name, and you can change it before creating the worktree.
 
 ## Get started
 
 You need macOS 14 or later and Git. A regular terminal works without installing an AI tool. To use Codex or Claude Code, install its command-line app on your Mac and sign in through that tool.
 
-1. Get the disk image from [Releases](https://github.com/LaughingVzr/Codevator/releases), open it, and drag Codevator into Applications. The app is currently unsigned and not notarized, so macOS may ask you to review it before opening.
+1. Get the disk image from [Releases](https://github.com/LaughingVzr/Codevator/releases), open it, and drag Codevator into Applications. The app uses an ad-hoc signature and is not notarized, so macOS may ask you to review it before opening.
 2. Click **+** in the sidebar, or press **⌘O**, and choose a local Git project.
 3. Select a worktree and click **Codex**, **Claude**, or **Terminal** to open a tab. You can also open a blank tab and choose what to run later.
 

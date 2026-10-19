@@ -40,18 +40,31 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     @MainActor static func style(_ window: NSWindow, appearance: AppAppearance) {
         guard window.title.hasPrefix("Codevator") else { return }
         window.titlebarAppearsTransparent = true
-        window.isOpaque = true
         let dark = NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1)
         let light = NSColor(srgbRed: 0.97, green: 0.97, blue: 0.98, alpha: 1)
+        let usesDarkAppearance: Bool
         switch appearance {
-        case .dark:
-            window.backgroundColor = dark
-        case .light:
-            window.backgroundColor = light
+        case .dark: usesDarkAppearance = true
+        case .light: usesDarkAppearance = false
         case .system:
-            window.backgroundColor = NSColor(name: NSColor.Name("CodevatorWindowBackground")) { currentAppearance in
-                currentAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            }
+            usesDarkAppearance = window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        }
+        if usesDarkAppearance {
+            window.isOpaque = true
+            window.backgroundColor = dark
+        } else if #available(macOS 26.0, *) {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        } else {
+            window.isOpaque = true
+            window.backgroundColor = light
+        }
+    }
+
+    @MainActor static func refreshSystemWindows() {
+        guard (UserDefaults.standard.string(forKey: "appearance") ?? system.rawValue) == system.rawValue else { return }
+        for window in NSApp.windows {
+            style(window, appearance: .system)
         }
     }
 }
@@ -96,6 +109,154 @@ private enum AppSurface {
 
     static func content(for scheme: ColorScheme) -> Color {
         scheme == .dark ? darkContent : lightContent
+    }
+}
+
+private struct BehindWindowMaterial: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        view.material = material
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
+    }
+}
+
+private struct LightGlassSurface: View {
+    let material: NSVisualEffectView.Material
+    let tintOpacity: Double
+
+    var body: some View {
+        BehindWindowMaterial(material: material)
+            .overlay(Color(red: 0.91, green: 0.96, blue: 1).opacity(tintOpacity))
+            .allowsHitTesting(false)
+    }
+}
+
+private struct SidebarChrome: ViewModifier {
+    let scheme: ColorScheme
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .background {
+                    if scheme == .light {
+                        LightGlassSurface(material: .sidebar, tintOpacity: 0.32)
+                    } else {
+                        AppSurface.darkSidebar
+                    }
+                }
+        } else {
+            content.scrollContentBackground(.hidden)
+                .background(AppSurface.sidebar(for: scheme))
+        }
+    }
+}
+
+private struct ContentChrome: ViewModifier {
+    let scheme: ColorScheme
+
+    @ViewBuilder func body(content: Content) -> some View {
+        content.background {
+            if #available(macOS 26.0, *), scheme == .light {
+                LightGlassSurface(material: .underWindowBackground, tintOpacity: 0.38)
+            } else {
+                AppSurface.content(for: scheme)
+            }
+        }
+    }
+}
+
+private struct WindowToolbarChrome: ViewModifier {
+    let scheme: ColorScheme
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbarBackground(scheme == .light ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(AppSurface.darkContent),
+                                      for: .windowToolbar)
+                .toolbarBackground(.visible, for: .windowToolbar)
+        } else {
+            content.toolbarBackground(AppSurface.content(for: scheme), for: .windowToolbar)
+                .toolbarBackground(.visible, for: .windowToolbar)
+        }
+    }
+}
+
+private struct GlassActionStyle: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content
+        }
+    }
+}
+
+private struct TabChrome: ViewModifier {
+    let selected: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            if selected {
+                content.glassEffect(.regular.tint(.accentColor.opacity(0.14)),
+                                    in: RoundedRectangle(cornerRadius: 10))
+            } else {
+                content.contentShape(RoundedRectangle(cornerRadius: 10))
+            }
+        } else {
+            content.background(selected ? Color.accentColor.opacity(0.18) : Color.clear,
+                               in: RoundedRectangle(cornerRadius: 7))
+        }
+    }
+}
+
+private struct NewTabChrome: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.plain)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+}
+
+private struct TabStripSurface: ViewModifier {
+    let scheme: ColorScheme
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.background {
+                if scheme == .light {
+                    Color.white.opacity(0.20).background(.regularMaterial)
+                } else {
+                    AppSurface.darkContent
+                }
+            }
+        } else {
+            content.background(.bar)
+        }
+    }
+}
+
+private struct SessionStatusSurface: ViewModifier {
+    let scheme: ColorScheme
+
+    func body(content: Content) -> some View {
+        content.background {
+            if scheme == .dark {
+                AppSurface.darkContent
+            } else {
+                Color.white.opacity(0.20).background(.regularMaterial)
+            }
+        }
     }
 }
 
@@ -216,8 +377,7 @@ struct WorkspaceView: View {
             .navigationTitle("项目")
             .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 400)
             .toolbar { Button(action: workspace.chooseProject) { Label("添加项目", systemImage: "plus") }; Button { Task { await workspace.refreshAll() } } label: { Label("刷新", systemImage: "arrow.clockwise") } }
-            .scrollContentBackground(.hidden)
-            .background(AppSurface.sidebar(for: colorScheme))
+            .modifier(SidebarChrome(scheme: colorScheme))
         } detail: {
             Group {
                 if let tree = workspace.selectedTree {
@@ -228,10 +388,10 @@ struct WorkspaceView: View {
                     }
                 }
             }
-            .background(AppSurface.content(for: colorScheme))
+            .modifier(ContentChrome(scheme: colorScheme))
         }
-        .toolbarBackground(AppSurface.content(for: colorScheme), for: .windowToolbar)
-        .toolbarBackground(.visible, for: .windowToolbar)
+        .modifier(WindowToolbarChrome(scheme: colorScheme))
+        .onChange(of: colorScheme) { _, _ in AppAppearance.refreshSystemWindows() }
         .sheet(item: $createProject) { CreateWorktreeView(project: $0, workspace: workspace) }
         .alert("操作未完成", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
             Button("确定") { workspace.error = nil }
@@ -349,6 +509,7 @@ struct WorktreeDetail: View {
     let tree: Worktree
     @ObservedObject var workspace: Workspace
     @ObservedObject var manager: SessionManager
+    @Environment(\.colorScheme) private var colorScheme
     private var selectedTab: SessionManager.Tab? { manager.selectedTab(for: tree.id) }
     private var unavailable: Bool { tree.unavailable || workspace.busy.contains(tree.projectID) }
     private func tabTitle(_ tab: SessionManager.Tab) -> String {
@@ -356,6 +517,68 @@ struct WorktreeDetail: View {
         let sameTool = manager.tabs(for: tree.id).filter { $0.provider == provider }
         guard sameTool.count > 1, let position = sameTool.firstIndex(where: { $0.id == tab.id }) else { return provider.title }
         return provider.title + " \(position + 1)"
+    }
+    private var launcherButtons: some View {
+        HStack(spacing: 8) {
+            ForEach(CLIProvider.allCases) { provider in
+                Button { Task { await workspace.openSession(tree, provider: provider) } } label: {
+                    Label { Text(provider.title) } icon: { CLIProviderIcon(provider: provider) }
+                }
+                .modifier(GlassActionStyle())
+                .accessibilityLabel("新建 \(provider.title) 标签")
+                .help("在新标签中启动 \(provider.title)")
+                .disabled(unavailable)
+            }
+        }
+    }
+    @ViewBuilder private var launcherControls: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 8) { launcherButtons }
+        } else {
+            launcherButtons
+        }
+    }
+    private var tabChips: some View {
+        HStack(spacing: 4) {
+            ForEach(manager.tabs(for: tree.id)) { tab in
+                HStack(spacing: 2) {
+                    Button {
+                        workspace.selectTab(tab.id, in: tree.id)
+                    } label: {
+                        HStack(spacing: 6) {
+                            if let provider = tab.provider { CLIProviderIcon(provider: provider) }
+                            else { Image(systemName: "terminal").foregroundStyle(.secondary) }
+                            Text(tabTitle(tab))
+                            if manager.unreadCompletions.contains(tab.id) {
+                                Circle().fill(.orange).frame(width: 6, height: 6)
+                            }
+                            if manager.sessions[tab.id]?.awaitingResponse == true {
+                                Circle().fill(.green).frame(width: 5, height: 5)
+                            }
+                        }.padding(.horizontal, 8).padding(.vertical, 6)
+                    }
+                    .accessibilityLabel("\(tabTitle(tab)) 标签")
+                    Button { Task { await workspace.closeTab(tab.id) } } label: {
+                        Image(systemName: "xmark").font(.caption2).padding(5)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭 \(tabTitle(tab)) 标签")
+                }
+                .buttonStyle(.plain)
+                .modifier(TabChrome(selected: manager.selectedTabIDs[tree.id] == tab.id))
+            }
+            Button { _ = manager.createTab(for: tree.id) } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .modifier(NewTabChrome())
+            .accessibilityLabel("新建空白标签")
+            .help("先创建标签，再选择工具")
+            .padding(.leading, 2)
+        }.padding(.horizontal, 8).padding(.vertical, 4)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -365,60 +588,15 @@ struct WorktreeDetail: View {
                     Text(tree.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 Spacer()
-                ForEach(CLIProvider.allCases) { provider in
-                    Button { Task { await workspace.openSession(tree, provider: provider) } } label: {
-                        Label { Text(provider.title) } icon: { CLIProviderIcon(provider: provider) }
-                    }
-                    .accessibilityLabel("新建 \(provider.title) 标签")
-                    .help("在新标签中启动 \(provider.title)")
-                    .disabled(unavailable)
-                }
+                launcherControls
             }.padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             HStack(spacing: 0) {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 4) {
-                        ForEach(manager.tabs(for: tree.id)) { tab in
-                            HStack(spacing: 2) {
-                                Button {
-                                    workspace.selectTab(tab.id, in: tree.id)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        if let provider = tab.provider { CLIProviderIcon(provider: provider) }
-                                        else { Image(systemName: "terminal").foregroundStyle(.secondary) }
-                                        Text(tabTitle(tab))
-                                        if manager.unreadCompletions.contains(tab.id) {
-                                            Circle().fill(.orange).frame(width: 6, height: 6)
-                                        }
-                                        if manager.sessions[tab.id]?.awaitingResponse == true {
-                                            Circle().fill(.green).frame(width: 5, height: 5)
-                                        }
-                                    }.padding(.horizontal, 8).padding(.vertical, 6)
-                                }
-                                .accessibilityLabel("\(tabTitle(tab)) 标签")
-                                Button { Task { await workspace.closeTab(tab.id) } } label: {
-                                    Image(systemName: "xmark").font(.caption2).padding(5)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("关闭 \(tabTitle(tab)) 标签")
-                            }
-                            .buttonStyle(.plain)
-                            .background(manager.selectedTabIDs[tree.id] == tab.id ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        Button { _ = manager.createTab(for: tree.id) } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24, height: 24)
-                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("新建空白标签")
-                        .help("先创建标签，再选择工具")
-                        .padding(.leading, 2)
-                    }.padding(.horizontal, 8).padding(.vertical, 4)
+                    tabChips
                 }
-            }.background(.bar)
+            }
+            .modifier(TabStripSurface(scheme: colorScheme))
             Divider()
             if tree.unavailable { Text("此工作目录不可用，请刷新项目。已有会话可以停止。").foregroundStyle(.orange).padding(8) }
             if let tab = selectedTab {
@@ -433,7 +611,7 @@ struct WorktreeDetail: View {
                                 Button("重新启动") { Task { await workspace.startSession(tree, tabID: tab.id, provider: session.provider) } }
                                     .disabled(unavailable)
                             }
-                        }.font(.caption).padding(8).background(.bar)
+                        }.font(.caption).padding(8).modifier(SessionStatusSurface(scheme: colorScheme))
                         TerminalHost(session: session).id(ObjectIdentifier(session))
                     }
                 } else {
@@ -625,8 +803,7 @@ struct AppSettingsView: View {
                     .tag(SettingsSection.tools)
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-            .scrollContentBackground(.hidden)
-            .background(AppSurface.sidebar(for: colorScheme))
+            .modifier(SidebarChrome(scheme: colorScheme))
         } detail: {
             Group {
                 switch section {
@@ -644,11 +821,11 @@ struct AppSettingsView: View {
                     ContentUnavailableView("选择设置项", systemImage: "gearshape")
                 }
             }
-            .background(AppSurface.content(for: colorScheme))
+            .modifier(ContentChrome(scheme: colorScheme))
         }
         .frame(minWidth: 700, minHeight: 400)
-        .toolbarBackground(AppSurface.content(for: colorScheme), for: .windowToolbar)
-        .toolbarBackground(.visible, for: .windowToolbar)
+        .modifier(WindowToolbarChrome(scheme: colorScheme))
+        .onChange(of: colorScheme) { _, _ in AppAppearance.refreshSystemWindows() }
     }
 }
 
@@ -695,6 +872,7 @@ private struct TerminalSettings: View {
 
 private struct NotificationSettings: View {
     @State private var status: UNAuthorizationStatus?
+    @State private var authorizationError: String?
     @AppStorage("completionSoundEnabled") private var completionSoundEnabled = true
 
     var body: some View {
@@ -715,13 +893,21 @@ private struct NotificationSettings: View {
                         .foregroundStyle(.secondary)
                     Button("允许通知") {
                         Task {
-                            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+                            do {
+                                _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+                                authorizationError = nil
+                            } catch {
+                                authorizationError = error.localizedDescription
+                            }
                             await refresh()
                         }
                     }
                 default:
                     Text("系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知。")
                         .foregroundStyle(.secondary)
+                }
+                if let authorizationError {
+                    Text(authorizationError).font(.caption).foregroundStyle(.red)
                 }
                 if status != .notDetermined {
                     Button("打开系统通知设置") {
@@ -820,6 +1006,7 @@ private struct AppearanceSettings: View {
                     .accessibilityAddTraits(appearance == option.rawValue ? .isSelected : [])
                 }
             }
+            .frame(maxWidth: 640, alignment: .leading)
             Text("跟随系统时，Codevator 会随 macOS 的外观设置自动切换。")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()

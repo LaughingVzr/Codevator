@@ -204,6 +204,14 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         // or forwards enhanced keyboard events to the CLI.
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         if modifiers == .command {
+            if event.keyCode == 123 || event.keyCode == 124 {
+                // Match macOS line navigation in shell and AI prompt editors.
+                // Their terminal equivalents are Ctrl+A and Ctrl+E.
+                traceEditing("lineNavigation", event: event)
+                selection.selectNone()
+                send(source: self, data: ArraySlice<UInt8>([event.keyCode == 123 ? 0x01 : 0x05]))
+                return true
+            }
             if event.keyCode == 51 {
                 // Command-Delete is the Mac shortcut for deleting to the
                 // beginning of the current input line.
