@@ -20,6 +20,7 @@
 "备份并重置配置" = "Back Up and Reset Configuration";
 "已锁定" = "Locked";
 "不可用" = "Unavailable";
+"有打开的终端标签" = "Open terminal tabs";
 "在 Finder 显示" = "Show in Finder";
 "移除 worktree…" = "Remove Worktree…";
 "选择一个 worktree" = "Select a Worktree";
@@ -73,12 +74,12 @@
 "%@ 回复已完成" = "%@ response complete";
 "通知" = "Notifications";
 "Codex 或 Claude 完成回复后，在你查看其他窗口时提醒你。" = "Get notified when Codex or Claude finishes while you are in another window.";
+"任务完成提示音" = "Completion Sound";
+"Codex 或 Claude 完成回复时播放提示音，包括正在查看当前对话时。" = "Play a sound when Codex or Claude finishes, even while you are viewing the conversation.";
 "通知已允许" = "Notifications allowed";
-"通知声音已开启。" = "Notification sounds are on.";
-"通知声音已关闭，可在 macOS 系统设置中开启。" = "Notification sounds are off. You can turn them on in macOS System Settings.";
 "尚未允许通知。启动编程工具时会请求权限。" = "Notifications have not been allowed yet. You will be asked when you start a coding tool.";
 "允许通知" = "Allow Notifications";
-"系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知和声音。" = "Notifications are off. Open macOS System Settings → Notifications → Codevator to enable alerts and sounds.";
+"系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知。" = "Notifications are off. Open macOS System Settings → Notifications → Codevator to enable alerts.";
 "打开系统通知设置" = "Open Notification Settings";
 "配置读取失败，原文件已保留：%@\n%@" = "Could not read configuration; original file preserved: %@\n%@";
 "请先停止所有运行会话，再重置配置" = "Stop all running sessions before resetting configuration";

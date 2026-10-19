@@ -17,6 +17,10 @@ final class Workspace: ObservableObject {
     private let confirmation: ((String, String, String) -> Bool)?
     private var refreshVersions: [String: Int] = [:]
     private var sessionObservation: AnyCancellable?
+    var playCompletionSound: () -> Void = { CompletionNotifier.playSound() }
+    var postCompletionNotification: (String, String, String) -> Void = { title, body, tabID in
+        CompletionNotifier.post(title: title, body: body, tabID: tabID)
+    }
     init(store: ConfigurationStore = .init(), confirmation: ((String, String, String) -> Bool)? = nil) {
         self.store = store; self.confirmation = confirmation
         sessions.onTurnCompleted = { [weak self] tabID, session in self?.turnCompleted(tabID: tabID, session: session) }
@@ -47,6 +51,7 @@ final class Workspace: ObservableObject {
     private func turnCompleted(tabID: String, session: TerminalSession) {
         guard session.provider != .terminal else { return }
         guard sessions.tabs(for: session.treeID).contains(where: { $0.id == tabID }) else { return }
+        playCompletionSound()
         let visible = NSApp.isActive && NSApp.keyWindow?.title == "Codevator" &&
             selection == session.treeID && sessions.selectedTabIDs[session.treeID] == tabID
         guard !visible else { return }
@@ -56,7 +61,8 @@ final class Workspace: ObservableObject {
         let worktreeName = project.flatMap { project in
             displayTrees(project.id).first(where: { $0.id == session.treeID })?.displayName(projectName: project.name)
         } ?? URL(fileURLWithPath: session.path).lastPathComponent
-        CompletionNotifier.post(title: String(format: tr("%@ 回复已完成"), session.provider.title), body: "\(projectName) · \(worktreeName)", tabID: tabID)
+        postCompletionNotification(String(format: tr("%@ 回复已完成"), session.provider.title),
+                                   "\(projectName) · \(worktreeName)", tabID)
     }
     func displayTrees(_ projectID: String) -> [Worktree] {
         let current = trees[projectID] ?? []
@@ -201,6 +207,19 @@ final class Workspace: ObservableObject {
 @MainActor
 private enum CompletionNotifier {
     private static var authorizationTask: Task<Void, Never>?
+    private static let sound = NSSound(named: NSSound.Name("Glass"))
+
+    static func playSound() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CODEVATOR_UI_TEST_CONFIG"] != nil || NSClassFromString("XCTestCase") != nil { return }
+        #endif
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "completionSoundEnabled") == nil ||
+              defaults.bool(forKey: "completionSoundEnabled") else { return }
+        guard let sound else { NSSound.beep(); return }
+        if sound.isPlaying { sound.stop() }
+        if !sound.play() { NSSound.beep() }
+    }
 
     static func prepare() {
         #if DEBUG
@@ -211,7 +230,7 @@ private enum CompletionNotifier {
         authorizationTask = Task {
             let center = UNUserNotificationCenter.current()
             guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
-            _ = try? await center.requestAuthorization(options: [.alert, .sound])
+            _ = try? await center.requestAuthorization(options: [.alert])
         }
     }
 
@@ -226,7 +245,7 @@ private enum CompletionNotifier {
             default: return
             }
             let content = UNMutableNotificationContent()
-            content.title = title; content.body = body; content.sound = .default
+            content.title = title; content.body = body
             let request = UNNotificationRequest(identifier: "codevator-" + tabID + "-" + UUID().uuidString, content: content, trigger: nil)
             do { try await center.add(request) }
             catch { NSLog("Codevator could not deliver a completion notification: %@", error.localizedDescription) }

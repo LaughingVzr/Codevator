@@ -157,8 +157,11 @@ final class TerminalEditingUITests: XCTestCase {
         focus(app)
         let codex = app.buttons["新建 Codex 标签"]
         XCTAssertTrue(codex.waitForExistence(timeout: 20))
+        let openTerminal = app.descendants(matching: .any).matching(identifier: "worktreeOpenTerminal-\(fixture)").firstMatch
+        XCTAssertFalse(openTerminal.exists)
         codex.click()
         XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 20))
+        XCTAssertTrue(openTerminal.waitForExistence(timeout: 10))
         app.buttons["新建 Claude 标签"].click()
         XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 20))
         XCTAssertEqual(app.buttons.matching(identifier: "Codex 标签").count, 1)
@@ -166,14 +169,27 @@ final class TerminalEditingUITests: XCTestCase {
         app.buttons["停止"].click()
         app.buttons["关闭 Claude 标签"].click()
         XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 10))
+        XCTAssertTrue(openTerminal.exists)
         app.buttons["新建空白标签"].click()
         XCTAssertTrue(app.buttons["新标签 标签"].waitForExistence(timeout: 10))
+        XCTAssertTrue(openTerminal.exists)
         app.buttons["终端"].click()
         XCTAssertTrue(app.textViews["终端"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["终端 标签"].exists)
         app.buttons["停止"].click()
+        XCTAssertTrue(app.buttons["重新启动"].waitForExistence(timeout: 10))
+        XCTAssertTrue(openTerminal.exists)
+        app.buttons["关闭 终端 标签"].click()
         app.buttons["Codex 标签"].click()
         app.buttons["停止"].click()
+        XCTAssertTrue(app.buttons["重新启动"].waitForExistence(timeout: 10))
+        XCTAssertTrue(openTerminal.exists)
+        app.buttons["关闭 Codex 标签"].click()
+        let indicatorGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: openTerminal)
+        XCTAssertEqual(XCTWaiter.wait(for: [indicatorGone], timeout: 10), .completed)
+        app.buttons["新建空白标签"].click()
+        XCTAssertTrue(app.buttons["新标签 标签"].exists)
+        XCTAssertFalse(openTerminal.exists)
     }
 
     func testRealCodexUnicodeCopyAndPaste() throws {
@@ -219,7 +235,7 @@ final class TerminalEditingUITests: XCTestCase {
         let start = app.buttons["新建 \(provider) 标签"]
         XCTAssertTrue(start.waitForExistence(timeout: 20))
         start.click()
-        let terminal = app.textViews[provider + " 终端"]
+        var terminal = app.textViews[provider + " 终端"]
         XCTAssertTrue(terminal.waitForExistence(timeout: 30))
         let ready = NSPredicate { _, _ in
             let visible = terminal.value as? String ?? ""
@@ -243,6 +259,17 @@ final class TerminalEditingUITests: XCTestCase {
         let textShown = NSPredicate { _, _ in (terminal.value as? String)?.contains("中文复制测试") == true }
         expectation(for: textShown, evaluatedWith: terminal)
         waitForExpectations(timeout: 10)
+        if provider == "Codex" {
+            for _ in 0..<2 {
+                try openSettingsMenu()
+                let settings = app.windows.matching(NSPredicate(format: "title != 'Codevator'")).firstMatch
+                XCTAssertTrue(settings.waitForExistence(timeout: 10))
+                settings.typeKey("w", modifierFlags: .command)
+                focus(app)
+            }
+            terminal = app.textViews[provider + " 终端"]
+            XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        }
 
         // Known test text only; never copy the entire CLI buffer.
         let lines = try XCTUnwrap(terminal.value as? String).components(separatedBy: "\n")
@@ -256,13 +283,17 @@ final class TerminalEditingUITests: XCTestCase {
         let endText = origin.withOffset(CGVector(dx: CGFloat(leadingColumns + 12) * cellWidth, dy: y))
         XCTAssertTrue(terminal.frame.contains(startText.screenPoint) && terminal.frame.contains(endText.screenPoint))
         focus(app)
-        XCUIElement.perform(withKeyModifiers: .shift) { startText.click(forDuration: 0.1, thenDragTo: endText) }
+        startText.click(forDuration: 0.1, thenDragTo: endText)
         key("c", modifiers: .command, app: app)
         let copied = clipboard.string(forType: .string) ?? ""
         let trace = (try? String(contentsOfFile: config.path + ".editing-trace", encoding: .utf8)) ?? "No editing trace"
         XCTAssertTrue(copied.trimmingCharacters(in: .whitespacesAndNewlines) == "中文复制测试", "Known selection was not copied; character count: \(copied.count); frame=\(terminal.frame), row=\(row)/\(lines.count), start=\(startText.screenPoint), end=\(endText.screenPoint); \(trace)")
-        key("a", modifiers: .control, app: app)
-        key("k", modifiers: .control, app: app)
+        if provider == "Codex" {
+            key(.delete, modifiers: .command, app: app)
+        } else {
+            key("a", modifiers: .control, app: app)
+            key("k", modifiers: .control, app: app)
+        }
         let cleared = NSPredicate { _, _ in !(terminal.value as? String ?? "").contains("中文复制测试") }
         expectation(for: cleared, evaluatedWith: terminal)
         waitForExpectations(timeout: 10)

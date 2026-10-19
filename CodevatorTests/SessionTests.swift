@@ -243,6 +243,26 @@ final class SessionTests: XCTestCase {
         XCTAssertNotNil(settings["hooks"])
         claude.fail("测试结束")
     }
+
+    func testAICompletionPlaysSoundAndBackgroundNotificationOnce() throws {
+        let tree = try tree("sound")
+        let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("sound-workspace.json")))
+        var soundCount = 0
+        var notificationCount = 0
+        workspace.playCompletionSound = { soundCount += 1 }
+        workspace.postCompletionNotification = { _, _, _ in notificationCount += 1 }
+
+        let codexTab = workspace.sessions.createTab(for: tree.id, provider: .codex)
+        workspace.sessions.onTurnCompleted?(codexTab.id, TerminalSession(tree: tree, provider: .codex))
+        XCTAssertEqual(soundCount, 1)
+        XCTAssertEqual(notificationCount, 1)
+
+        let terminalTab = workspace.sessions.createTab(for: tree.id, provider: .terminal)
+        workspace.sessions.onTurnCompleted?(terminalTab.id, TerminalSession(tree: tree, provider: .terminal))
+        workspace.sessions.onTurnCompleted?("closed-tab", TerminalSession(tree: tree, provider: .codex))
+        XCTAssertEqual(soundCount, 1)
+        XCTAssertEqual(notificationCount, 1)
+    }
     func testAIActivityTracksSubmittedTurnsNotPermissionReturnsOrOpenProcesses() async throws {
         let tree = try tree("turn-activity")
         let manager = SessionManager()
@@ -419,6 +439,38 @@ final class SessionTests: XCTestCase {
         let received = await waitFor { self.text(session).contains("中文") }; XCTAssertTrue(received)
         await session.stop()
     }
+    func testUncommittedTextDoesNotRemainOverCodexPromptAfterWindowSwitch() async throws {
+        let session = TerminalSession(tree: try tree("ime-window"), provider: .codex)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView?.addSubview(session.terminal)
+        session.launch(executable: "/bin/cat", environment: ["PATH": "/usr/bin:/bin"])
+        defer { window.contentView?.subviews.forEach { $0.removeFromSuperview() } }
+
+        session.terminal.setMarkedText("旧输入", selectedRange: NSRange(location: 3, length: 0),
+                                       replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(session.terminal.hasMarkedText())
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        XCTAssertFalse(session.terminal.hasMarkedText())
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(text(session).contains("旧输入"))
+
+        session.terminal.setMarkedText("旧输入", selectedRange: NSRange(location: 3, length: 0),
+                                       replacementRange: NSRange(location: NSNotFound, length: 0))
+        session.terminal.send(source: session.terminal, data: ArraySlice<UInt8>([13]))
+        XCTAssertFalse(session.terminal.hasMarkedText())
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(text(session).contains("旧输入"))
+        session.terminal.setMarkedText("旧输入", selectedRange: NSRange(location: 3, length: 0),
+                                       replacementRange: NSRange(location: NSNotFound, length: 0))
+        session.terminal.send(source: session.terminal, data: ArraySlice("\u{1B}[13u".utf8))
+        XCTAssertFalse(session.terminal.hasMarkedText())
+        session.terminal.setMarkedText("旧输入", selectedRange: NSRange(location: 3, length: 0),
+                                       replacementRange: NSRange(location: NSNotFound, length: 0))
+        session.terminal.removeFromSuperview()
+        XCTAssertFalse(session.terminal.hasMarkedText())
+        await session.stop()
+    }
     func testTerminalCopyPreservesUnicode() throws {
         let pasteboard = NSPasteboard.general
         let original = (pasteboard.pasteboardItems ?? []).map { item in
@@ -453,5 +505,38 @@ final class SessionTests: XCTestCase {
             XCTAssertTrue(session.terminal.performKeyEquivalent(with: event))
         }
         XCTAssertTrue(pasteboard.string(forType: .string)?.contains("快捷键复制 中文") == true)
+    }
+
+    func testCodexUnsentInputCanBeCopiedWhileMouseTrackingIsEnabled() throws {
+        let pasteboard = NSPasteboard.general
+        let original = (pasteboard.pasteboardItems ?? []).map { item in
+            let clone = NSPasteboardItem()
+            for type in item.types { if let data = item.data(forType: type) { clone.setData(data, forType: type) } }
+            return clone
+        }
+        defer { pasteboard.clearContents(); if !original.isEmpty { pasteboard.writeObjects(original) } }
+        let view = TerminalSession(tree: try tree("tracked-copy"), provider: .codex).terminal
+        view.frame = CGRect(x: 0, y: 0, width: 640, height: 240)
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = view
+        // Codex renders its editable prompt in the alternate terminal buffer.
+        // Mouse reporting can be enabled there even though the text is still
+        // an unsent draft, so a normal drag must remain a local selection.
+        view.feed(text: "\u{1B}[?1049h\u{1B}[?1002hCOPYABLE TEXT")
+        XCTAssertNotEqual(view.getTerminal().mouseMode, .off)
+
+        func mouse(_ type: NSEvent.EventType, x: CGFloat, number: Int) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type,
+                                             location: CGPoint(x: x, y: view.bounds.height - 10),
+                                             modifierFlags: [], timestamp: 0,
+                                             windowNumber: window.windowNumber, context: nil,
+                                             eventNumber: number, clickCount: 1, pressure: 1))
+        }
+        view.mouseDown(with: try mouse(.leftMouseDown, x: 5, number: 1))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, x: 105, number: 2))
+        view.mouseUp(with: try mouse(.leftMouseUp, x: 105, number: 3))
+        XCTAssertEqual(view.getSelection(), "COPYABLE TEXT")
+        view.copy(self)
+        XCTAssertEqual(pasteboard.string(forType: .string), "COPYABLE TEXT")
     }
 }

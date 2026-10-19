@@ -182,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .list, .sound])
+        completionHandler([.banner, .list])
     }
 }
 
@@ -246,6 +246,18 @@ struct WorkspaceView: View {
 
     private func treeRow(_ tree: Worktree, project: Project) -> some View {
         HStack(spacing: 8) {
+            if workspace.sessions.openTerminalCount(in: tree.id) > 0 {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.teal)
+                    .frame(width: 18, height: 18)
+                    .background(.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                    .accessibilityLabel("有打开的终端标签")
+                    .accessibilityIdentifier("worktreeOpenTerminal-\(tree.path)")
+                    .help("有打开的终端标签")
+            } else {
+                Color.clear.frame(width: 18, height: 18).accessibilityHidden(true)
+            }
             Image(systemName: tree.isMain ? "house" : "arrow.triangle.branch")
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
@@ -683,31 +695,32 @@ private struct TerminalSettings: View {
 
 private struct NotificationSettings: View {
     @State private var status: UNAuthorizationStatus?
-    @State private var soundEnabled = false
+    @AppStorage("completionSoundEnabled") private var completionSoundEnabled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("通知").font(.title2.weight(.semibold))
             Text("Codex 或 Claude 完成回复后，在你查看其他窗口时提醒你。")
                 .foregroundStyle(.secondary)
+            Toggle("任务完成提示音", isOn: $completionSoundEnabled)
+            Text("Codex 或 Claude 完成回复时播放提示音，包括正在查看当前对话时。")
+                .font(.caption).foregroundStyle(.secondary)
             if let status {
                 switch status {
                 case .authorized, .provisional:
                     Label("通知已允许", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                    Text(soundEnabled ? "通知声音已开启。" : "通知声音已关闭，可在 macOS 系统设置中开启。")
-                        .foregroundStyle(.secondary)
                 case .notDetermined:
                     Text("尚未允许通知。启动编程工具时会请求权限。")
                         .foregroundStyle(.secondary)
                     Button("允许通知") {
                         Task {
-                            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
                             await refresh()
                         }
                     }
                 default:
-                    Text("系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知和声音。")
+                    Text("系统通知已关闭。请在 macOS 系统设置 → 通知 → Codevator 中开启通知。")
                         .foregroundStyle(.secondary)
                 }
                 if status != .notDetermined {
@@ -731,7 +744,6 @@ private struct NotificationSettings: View {
     private func refresh() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         status = settings.authorizationStatus
-        soundEnabled = settings.soundSetting == .enabled
     }
 }
 

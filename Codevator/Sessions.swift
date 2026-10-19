@@ -5,6 +5,8 @@ import Combine
 
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
+    private var windowObservers: [NSObjectProtocol] = []
+    var prefersLocalTextSelection = false
     var onSubmittedInput: ((String) -> Void)?
     var onInterruptedInput: (() -> Void)?
     var onPermissionSelectionCompleted: (() -> Void)?
@@ -65,11 +67,16 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         // sequence when a CLI enables enhanced keyboard reporting.
         if data.contains(10) || data.contains(13) ||
             encoded == "\u{1B}[13u" || encoded == "\u{1B}[13;1u" {
+            discardUncommittedText()
             onSubmittedInput?(draftInput)
             draftInput = ""
         } else if data.contains(3) || encoded == "\u{1B}" || encoded == "\u{1B}[27u" {
+            discardUncommittedText()
             draftInput = ""
             onInterruptedInput?()
+        } else if data.count == 1 && data.first == 0x15 {
+            // Ctrl+U removes the input back to the start of the line.
+            draftInput = ""
         } else if data.contains(8) || data.contains(127) {
             if !draftInput.isEmpty { draftInput.removeLast() }
         }
@@ -88,7 +95,21 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let editingMonitor { NSEvent.removeMonitor(editingMonitor); self.editingMonitor = nil }
-        guard window != nil else { return }
+        windowObservers.forEach(NotificationCenter.default.removeObserver)
+        windowObservers.removeAll()
+        guard let window else { discardUncommittedText(); return }
+        // SwiftTerm's IME preview is a separate, non-editable subview. Clear it
+        // when focus or hosting changes so it cannot cover Codex's next prompt.
+        windowObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in self?.discardUncommittedText() })
+        windowObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.setNeedsDisplay(self.bounds)
+        })
+        setNeedsDisplay(bounds)
         editingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c" { self?.traceEditing("monitor", event: event) }
             guard let self, let window = self.window, window.isKeyWindow, window.firstResponder === self else { return event }
@@ -96,7 +117,17 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         }
     }
 
-    deinit { if let editingMonitor { NSEvent.removeMonitor(editingMonitor) } }
+    private func discardUncommittedText() {
+        guard hasMarkedText() else { return }
+        inputContext?.discardMarkedText()
+        unmarkText()
+        setNeedsDisplay(bounds)
+    }
+
+    deinit {
+        if let editingMonitor { NSEvent.removeMonitor(editingMonitor) }
+        windowObservers.forEach(NotificationCenter.default.removeObserver)
+    }
 
     override func copy(_ sender: Any) {
         traceEditing("copy")
@@ -117,7 +148,9 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         withTextSelectionOverride(event) { super.mouseDown(with: event) }
         // SwiftTerm seeds a drag at its first movement. Preserve the actual
         // press position so fast drags do not omit the first character.
-        if event.clickCount == 1, !extendingSelection, event.modifierFlags.contains(.shift) || !allowMouseReporting || getTerminal().mouseMode == .off {
+        let selectsLocally = prefersLocalTextSelection || event.modifierFlags.contains(.shift) ||
+            !allowMouseReporting || getTerminal().mouseMode == .off
+        if event.clickCount == 1, !extendingSelection, selectsLocally {
             let terminal = getTerminal()
             let index = characterIndex(for: event.locationInWindow)
             selection.setSoftStart(bufferPosition: Position(col: max(0, index % terminal.cols), row: max(0, index / terminal.cols) + terminal.buffer.yDisp))
@@ -137,7 +170,7 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
 
     private func withTextSelectionOverride(_ event: NSEvent, action: () -> Void) {
         let reporting = allowMouseReporting
-        if event.modifierFlags.contains(.shift) { allowMouseReporting = false }
+        if prefersLocalTextSelection || event.modifierFlags.contains(.shift) { allowMouseReporting = false }
         defer { allowMouseReporting = reporting }
         action()
     }
@@ -171,6 +204,13 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         // or forwards enhanced keyboard events to the CLI.
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         if modifiers == .command {
+            if event.keyCode == 51 {
+                // Command-Delete is the Mac shortcut for deleting to the
+                // beginning of the current input line.
+                selection.selectNone()
+                send(source: self, data: ArraySlice<UInt8>([0x15]))
+                return true
+            }
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "c": copy(self); return true
             case "v": paste(self); return true
@@ -210,6 +250,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         treeID = tree.id; path = tree.path; self.provider = provider
         terminal = AccessibleTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600), font: .monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular), options: TerminalOptions(scrollback: 5000))
         terminal.refreshWholeSurfaceAfterOutput = provider == .codex
+        // Codex and Claude may enable mouse tracking after entering their TUI.
+        // Keep left-button text selection local so copying remains predictable.
+        terminal.prefersLocalTextSelection = provider != .terminal
         terminal.setAccessibilityElement(true)
         terminal.setAccessibilityRole(.textArea)
         terminal.setAccessibilityLabel(provider == .terminal ? provider.title : provider.title + tr(" 终端"))
@@ -454,6 +497,9 @@ final class SessionManager: ObservableObject {
     func adjustFontSize(by delta: Int) { setFontSize(fontSize + delta) }
     func resetFontSize() { setFontSize(TerminalFontSize.defaultValue) }
     func tabs(for treeID: String) -> [Tab] { tabsByTree[treeID] ?? [] }
+    func openTerminalCount(in treeID: String) -> Int {
+        tabs(for: treeID).filter { $0.provider != nil }.count
+    }
     func selectedTab(for treeID: String) -> Tab? {
         tabs(for: treeID).first { $0.id == selectedTabIDs[treeID] }
     }
