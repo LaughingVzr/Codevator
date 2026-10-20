@@ -51,6 +51,13 @@
 "新分支名" = "New Branch Name";
 "本地起点" = "Local Starting Point";
 "已有本地分支" = "Existing Local Branch";
+"已有分支" = "Existing Branch";
+"本地分支" = "Local Branches";
+"远程分支" = "Remote Branches";
+"刷新远程分支" = "Refresh Remote Branches";
+"正在获取远程分支…" = "Fetching remote branches…";
+"将在本地创建跟踪分支：%@" = "Create local tracking branch: %@";
+"远程分支已不存在，请刷新" = "Remote branch no longer exists. Refresh the list";
 "选择分支" = "Choose a Branch";
 "自定义 worktree 名称" = "Custom Worktree Name";
 "worktree 名称" = "Worktree Name";

@@ -54,6 +54,45 @@ final class CoreTests: XCTestCase {
         await expectError { _ = try await self.git.create(project, path: self.root.appendingPathComponent("bad-start").path, branch: "valid", newBranch: true, start: "does-not-exist") }
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: repository).appendingPathComponent("tracked")), Data("initial".utf8))
     }
+    func testRemoteBranchFetchAndTrackingWorktrees() async throws {
+        let project = try await setupRepository()
+        let bare = root.appendingPathComponent("origin.git").path
+        let initialized = try await CommandRunner.run("/usr/bin/git", ["init", "--bare", bare])
+        XCTAssertEqual(initialized.status, 0)
+        _ = try await git.command(repository, ["remote", "add", "origin", bare])
+        _ = try await git.command(repository, ["push", "origin", "main:refs/heads/main"])
+        _ = try await git.command(repository, ["push", "origin", "main:refs/heads/remote-only"])
+        _ = try await git.command(repository, ["update-ref", "-d", "refs/remotes/origin/remote-only"])
+        let cached = try await git.remoteBranches(project)
+        XCTAssertFalse(cached.contains { $0.displayName == "origin/remote-only" })
+
+        let fetched = try await git.fetchRemoteBranches(project)
+        let remote = try XCTUnwrap(fetched.first { $0.displayName == "origin/remote-only" })
+        XCTAssertEqual(remote.id, "refs/remotes/origin/remote-only")
+        let localBefore = try await git.branches(project)
+        XCTAssertFalse(localBefore.contains("remote-only"))
+
+        let firstPath = root.appendingPathComponent("first-remote").path
+        let first = try await git.create(project, path: firstPath, branch: "", newBranch: false,
+                                         start: "HEAD", remoteBranch: remote)
+        XCTAssertEqual(first.last?.branch, "remote-only")
+        let firstUpstream = try await git.command(firstPath,
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).text
+        XCTAssertEqual(firstUpstream, "origin/remote-only")
+
+        let secondPath = root.appendingPathComponent("second-remote").path
+        let second = try await git.create(project, path: secondPath, branch: "", newBranch: false,
+                                          start: "HEAD", remoteBranch: remote)
+        XCTAssertEqual(second.last?.branch, "remote-only-origin")
+        let secondUpstream = try await git.command(secondPath,
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).text
+        XCTAssertEqual(secondUpstream, "origin/remote-only")
+        await expectError {
+            _ = try await self.git.create(project, path: self.root.appendingPathComponent("invalid-remote").path,
+                                          branch: "", newBranch: false, start: "HEAD",
+                                          remoteBranch: RemoteBranch(remote: "origin", name: "missing"))
+        }
+    }
     func testWorktreeDisplayNamesFollowCheckoutLayout() {
         let projectID = "/projects/repo/.git"
         let main = Worktree(projectID: projectID, path: "/projects/repo", branch: "dev", isMain: true)

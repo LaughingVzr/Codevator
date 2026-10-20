@@ -166,6 +166,13 @@ final class TerminalEditingUITests: XCTestCase {
         XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 20))
         XCTAssertEqual(app.buttons.matching(identifier: "Codex 标签").count, 1)
         XCTAssertEqual(app.buttons.matching(identifier: "Claude 标签").count, 1)
+        let codexTab = app.buttons["Codex 标签"]
+        XCTAssertGreaterThanOrEqual(codexTab.frame.height, 34)
+        codexTab.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: 18, dy: codexTab.frame.height / 2)).click()
+        XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 10))
+        app.buttons["Claude 标签"].click()
+        XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 10))
         app.buttons["停止"].click()
         app.buttons["关闭 Claude 标签"].click()
         XCTAssertTrue(app.textViews["Codex 终端"].waitForExistence(timeout: 10))

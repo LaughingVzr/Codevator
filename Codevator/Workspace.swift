@@ -123,10 +123,12 @@ final class Workspace: ObservableObject {
             if let i = self.configuration.projects.firstIndex(where: { $0.id == project.id }), self.configuration.projects[i].expanded != value { self.configuration.projects[i].expanded = value; self.save() }
         })
     }
-    func create(_ project: Project, path: String, branch: String, newBranch: Bool, start: String) async -> Bool {
+    func create(_ project: Project, path: String, branch: String, newBranch: Bool, start: String,
+                remoteBranch: RemoteBranch? = nil) async -> Bool {
         guard busy.insert(project.id).inserted else { return false }; defer { busy.remove(project.id) }
         do {
-            _ = try await git.create(project, path: path, branch: branch, newBranch: newBranch, start: start)
+            _ = try await git.create(project, path: path, branch: branch, newBranch: newBranch, start: start,
+                                     remoteBranch: remoteBranch)
             await refresh(project)
             selection = trees[project.id]?.first(where: { $0.path == GitService.canonical(path) })?.id
             return true

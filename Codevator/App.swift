@@ -207,6 +207,7 @@ private struct TabChrome: ViewModifier {
             if selected {
                 content.glassEffect(.regular.tint(.accentColor.opacity(0.14)),
                                     in: RoundedRectangle(cornerRadius: 10))
+                    .contentShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 content.contentShape(RoundedRectangle(cornerRadius: 10))
             }
@@ -541,7 +542,7 @@ struct WorktreeDetail: View {
     private var tabChips: some View {
         HStack(spacing: 4) {
             ForEach(manager.tabs(for: tree.id)) { tab in
-                HStack(spacing: 2) {
+                HStack(spacing: 0) {
                     Button {
                         workspace.selectTab(tab.id, in: tree.id)
                     } label: {
@@ -555,16 +556,22 @@ struct WorktreeDetail: View {
                             if manager.sessions[tab.id]?.awaitingResponse == true {
                                 Circle().fill(.green).frame(width: 5, height: 5)
                             }
-                        }.padding(.horizontal, 8).padding(.vertical, 6)
+                        }
+                        .padding(.leading, 10).padding(.trailing, 6)
+                        .frame(minHeight: 34)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("\(tabTitle(tab)) 标签")
                     Button { Task { await workspace.closeTab(tab.id) } } label: {
-                        Image(systemName: "xmark").font(.caption2).padding(5)
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                            .frame(width: 30, height: 34)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("关闭 \(tabTitle(tab)) 标签")
                 }
-                .buttonStyle(.plain)
                 .modifier(TabChrome(selected: manager.selectedTabIDs[tree.id] == tab.id))
             }
             Button { _ = manager.createTab(for: tree.id) } label: {
@@ -703,7 +710,17 @@ struct CreateWorktreeView: View {
     @State private var customName = ""
     @State private var generatedName = ""
     @State private var branches: [String] = []
+    @State private var remoteBranches: [RemoteBranch] = []
+    @State private var selectedExistingBranch = ""
+    @State private var isFetchingRemoteBranches = false
+    @State private var fetchError: String?
     @State private var creationError: String?
+    private var selectedLocalBranch: String? {
+        branches.first { selectedExistingBranch == "refs/heads/\($0)" }
+    }
+    private var selectedRemoteBranch: RemoteBranch? {
+        remoteBranches.first { selectedExistingBranch == $0.id }
+    }
     private var reservedNames: Set<String> {
         Set(workspace.displayTrees(project.id).map { $0.displayName(projectName: project.name) })
     }
@@ -717,16 +734,52 @@ struct CreateWorktreeView: View {
         reservedNames.contains(name) || FileManager.default.fileExists(atPath: URL(fileURLWithPath: root).appendingPathComponent(name).path)
     }
     private var canCreate: Bool {
-        root.hasPrefix("/") && !branch.isEmpty && WorktreeLocation.validName(name) && !nameTaken &&
-        !workspace.busy.contains(project.id)
+        root.hasPrefix("/") && (newBranch ? !branch.isEmpty : selectedLocalBranch != nil || selectedRemoteBranch != nil) &&
+        WorktreeLocation.validName(name) && !nameTaken && !workspace.busy.contains(project.id)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("创建 worktree · \(project.name)").font(.title2)
             Toggle("创建新分支", isOn: $newBranch)
-                .onChange(of: newBranch) { _ in branch = "" }
-            if newBranch { TextField("新分支名", text: $branch); TextField("本地起点", text: $start) }
-            else { Picker("已有本地分支", selection: $branch) { Text("选择分支").tag(""); ForEach(branches, id: \.self) { Text($0).tag($0) } } }
+                .onChange(of: newBranch) { _ in branch = ""; selectedExistingBranch = "" }
+            if newBranch {
+                TextField("新分支名", text: $branch)
+                TextField("本地起点", text: $start)
+            } else {
+                HStack {
+                    Picker("已有分支", selection: $selectedExistingBranch) {
+                        Text("选择分支").tag("")
+                        Section("本地分支") {
+                            ForEach(branches, id: \.self) { name in
+                                Text(name).tag("refs/heads/\(name)")
+                            }
+                        }
+                        Section("远程分支") {
+                            ForEach(remoteBranches) { remote in
+                                Text(remote.displayName).tag(remote.id)
+                            }
+                        }
+                    }
+                    Button { Task { await refreshRemoteBranches() } } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新远程分支")
+                    .accessibilityLabel("刷新远程分支")
+                    .disabled(isFetchingRemoteBranches)
+                }
+                if isFetchingRemoteBranches {
+                    ProgressView("正在获取远程分支…").controlSize(.small)
+                }
+                if let remote = selectedRemoteBranch {
+                    let trackingName = GitService.trackingBranchName(for: remote, existing: Set(branches))
+                    Text("将在本地创建跟踪分支：\(trackingName)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let fetchError {
+                    Text(fetchError).font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Toggle("自定义 worktree 名称", isOn: $customNameEnabled)
             if customNameEnabled {
                 TextField("worktree 名称", text: $customName)
@@ -764,7 +817,10 @@ struct CreateWorktreeView: View {
                 Spacer(); Button("取消") { dismiss() }.disabled(workspace.busy.contains(project.id))
                 Button("创建") { Task {
                     creationError = nil
-                    if await workspace.create(project, path: targetPath, branch: branch, newBranch: newBranch, start: start) { dismiss() }
+                    if await workspace.create(project, path: targetPath,
+                                              branch: newBranch ? branch : (selectedLocalBranch ?? ""),
+                                              newBranch: newBranch, start: start,
+                                              remoteBranch: newBranch ? nil : selectedRemoteBranch) { dismiss() }
                     else { creationError = workspace.error; workspace.error = nil }
                 } }
                     .disabled(!canCreate)
@@ -773,8 +829,25 @@ struct CreateWorktreeView: View {
         .task {
             root = WorktreeLocation.suggestedRoot(project: project, trees: workspace.displayTrees(project.id))
             generatedName = WorktreeLocation.randomName(root: root, reservedNames: reservedNames)
-            do { branches = try await workspace.git.branches(project) } catch { creationError = error.localizedDescription }
+            do {
+                branches = try await workspace.git.branches(project)
+                remoteBranches = try await workspace.git.remoteBranches(project)
+                await refreshRemoteBranches()
+            } catch { creationError = error.localizedDescription }
         }
+    }
+    @MainActor private func refreshRemoteBranches() async {
+        guard !isFetchingRemoteBranches else { return }
+        isFetchingRemoteBranches = true
+        defer { isFetchingRemoteBranches = false }
+        do {
+            remoteBranches = try await workspace.git.fetchRemoteBranches(project)
+            branches = try await workspace.git.branches(project)
+            if !selectedExistingBranch.isEmpty && selectedLocalBranch == nil && selectedRemoteBranch == nil {
+                selectedExistingBranch = ""
+            }
+            fetchError = nil
+        } catch { fetchError = error.localizedDescription }
     }
 }
 

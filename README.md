@@ -25,7 +25,7 @@ On macOS 26, Liquid Glass gives the sidebar, toolbar, and tabs a translucent loo
 - **Move between projects without losing your place.** See your projects and their worktrees in the sidebar. A worktree is a separate working folder for the same Git project, so you can work on another branch without disturbing your main folder.
 - **Give each task its own tab.** Open Codex, Claude Code, or a regular terminal in the selected worktree. Open more than one tab, even in the same worktree, and return to them later.
 - **See where you left a session running.** A terminal icon marks worktrees with open tabs. In Codex and Claude Code tabs, green shows a prompt waiting for a reply; orange shows a reply that finished while you were elsewhere and has not been viewed yet. Both can appear beside the same worktree or project. Codevator can play a sound when a reply finishes and, if you allow notifications, alert you when it finishes in the background.
-- **Create worktrees from the sidebar.** Start from an existing local branch or make a new one. Codevator suggests a folder name, and you can change it before creating the worktree.
+- **Create worktrees from the sidebar.** Start from a local or remote branch, or make a new one. Codevator suggests a folder name, and you can change it before creating the worktree.
 
 ## Get started
 
@@ -35,7 +35,7 @@ You need macOS 14 or later and Git. A regular terminal works without installing 
 2. Click **+** in the sidebar, or press **⌘O**, and choose a local Git project.
 3. Select a worktree and click **Codex**, **Claude**, or **Terminal** to open a tab. You can also open a blank tab and choose what to run later.
 
-To add another worktree, right-click a project in the sidebar and choose **Create worktree**. The form starts with an existing local branch; switch on **Create new branch** if you need one.
+To add another worktree, right-click a project in the sidebar and choose **Create worktree**. The form starts with existing local and remote branches. It refreshes the remote list when opened, and you can refresh it again in the form. Choose **Create new branch** if you need one.
 
 Codevator looks for `codex` and `claude` on your Mac. If either tool is installed in an unusual location, set its path in **Codevator → Settings → Coding Tools**. The regular terminal uses your Mac's shell.
 

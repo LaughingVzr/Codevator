@@ -59,6 +59,13 @@ struct Project: Identifiable, Codable, Equatable {
     var expanded = true
 }
 
+struct RemoteBranch: Identifiable, Hashable {
+    let remote: String
+    let name: String
+    var id: String { "refs/remotes/\(remote)/\(name)" }
+    var displayName: String { "\(remote)/\(name)" }
+}
+
 struct Worktree: Identifiable, Equatable {
     var projectID: String
     var path: String
@@ -162,8 +169,8 @@ struct ConfigurationStore {
 }
 
 actor GitService {
-    func command(_ directory: String, _ args: [String]) async throws -> CommandResult {
-        let r = try await CommandRunner.run("/usr/bin/git", ["-C", directory] + args)
+    func command(_ directory: String, _ args: [String], timeout: TimeInterval = 20) async throws -> CommandResult {
+        let r = try await CommandRunner.run("/usr/bin/git", ["-C", directory] + args, timeout: timeout)
         guard r.status == 0 else { throw WorkspaceError(r.error.isEmpty ? r.text : r.error.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return r
     }
@@ -201,6 +208,39 @@ actor GitService {
     func branches(_ project: Project) async throws -> [String] {
         try await command(project.directory, ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]).text.components(separatedBy: "\n").filter { !$0.isEmpty }
     }
+    func remoteBranches(_ project: Project) async throws -> [RemoteBranch] {
+        let remotes = try await command(project.directory, ["remote"]).text
+            .components(separatedBy: "\n").filter { !$0.isEmpty }
+            .sorted { $0.count > $1.count }
+        let output = try await command(project.directory,
+            ["for-each-ref", "--format=%(refname)\t%(symref)", "refs/remotes/"]).output
+        return String(decoding: output, as: UTF8.self).split(separator: "\n").compactMap { line in
+            let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            guard fields.count == 2, fields[1].isEmpty else { return nil } // Ignore origin/HEAD aliases.
+            let ref = String(fields[0])
+            guard let remote = remotes.first(where: { ref.hasPrefix("refs/remotes/\($0)/") }) else { return nil }
+            let name = String(ref.dropFirst("refs/remotes/\(remote)/".count))
+            return name.isEmpty ? nil : RemoteBranch(remote: remote, name: name)
+        }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+    func fetchRemoteBranches(_ project: Project) async throws -> [RemoteBranch] {
+        await acquire(project.id); defer { release(project.id) }
+        _ = try await command(project.directory, ["fetch", "--all", "--prune"], timeout: 120)
+        return try await remoteBranches(project)
+    }
+    static func trackingBranchName(for remote: RemoteBranch, existing: Set<String>) -> String {
+        func conflicts(_ name: String) -> Bool {
+            existing.contains { $0 == name || $0.hasPrefix(name + "/") || name.hasPrefix($0 + "/") }
+        }
+        if !conflicts(remote.name) { return remote.name }
+        let base = remote.name.replacingOccurrences(of: "/", with: "-") + "-" + remote.remote
+        var name = base, suffix = 2
+        while conflicts(name) {
+            name = "\(base)-\(suffix)"
+            suffix += 1
+        }
+        return name
+    }
     // Actor methods can re-enter at awaits: explicit leases serialize full mutations.
     private var busy: Set<String> = []
     private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -213,24 +253,35 @@ actor GitService {
             let next = queue.removeFirst(); waiters[id] = queue; next.resume()
         } else { busy.remove(id) }
     }
-    func create(_ project: Project, path: String, branch: String, newBranch: Bool, start: String) async throws -> [Worktree] {
+    func create(_ project: Project, path: String, branch: String, newBranch: Bool, start: String,
+                remoteBranch: RemoteBranch? = nil) async throws -> [Worktree] {
         await acquire(project.id); defer { release(project.id) }
         guard path.hasPrefix("/"), !FileManager.default.fileExists(atPath: path) else { throw WorkspaceError("目标必须是尚不存在的绝对路径") }
-        _ = try await command(project.directory, ["check-ref-format", "--branch", branch])
+        let localBranches = try await branches(project)
+        let localBranch: String
+        if !newBranch, let remoteBranch {
+            guard try await remoteBranches(project).contains(remoteBranch) else { throw WorkspaceError("远程分支已不存在，请刷新") }
+            localBranch = Self.trackingBranchName(for: remoteBranch, existing: Set(localBranches))
+        } else {
+            localBranch = branch
+        }
+        _ = try await command(project.directory, ["check-ref-format", "--branch", localBranch])
         var args = ["worktree", "add"]
         if newBranch {
             guard !start.hasPrefix("-") else { throw WorkspaceError("无效的起点") }
             _ = try await command(project.directory, ["rev-parse", "--verify", "--end-of-options", start + "^{commit}"])
-            args += ["-b", branch, "--", path, start]
+            args += ["-b", localBranch, "--", path, start]
+        } else if let remoteBranch {
+            args += ["--track", "-b", localBranch, "--", path, remoteBranch.id]
         } else {
-            guard try await branches(project).contains(branch) else { throw WorkspaceError("请选择已有本地分支") }
-            args += ["--", path, branch]
+            guard localBranches.contains(localBranch) else { throw WorkspaceError("请选择已有本地分支") }
+            args += ["--", path, localBranch]
         }
         do { _ = try await command(project.directory, args) }
         catch {
             let original = error.localizedDescription
             let remaining = (try? await worktrees(project)) ?? []
-            let branchExists = (try? await branches(project))?.contains(branch) == true
+            let branchExists = (try? await branches(project))?.contains(localBranch) == true
             throw WorkspaceError(String(format: tr("%@\n状态已重新读取；目标目录%@，分支%@，共 %ld 个 worktree。请检查残留内容。"), original,
                                         tr(FileManager.default.fileExists(atPath: path) ? "存在" : "不存在"), tr(branchExists ? "存在" : "不存在"), remaining.count))
         }
