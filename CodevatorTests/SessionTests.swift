@@ -344,6 +344,39 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(manager.pendingCount(in: tree.id), 1)
         await session.stop()
     }
+    func testCompletionMarkerNotifiesWithoutPolling() async throws {
+        let session = TerminalSession(tree: try tree("completion-event"), provider: .codex)
+        let arguments = session.completionArguments(for: "/opt/homebrew/bin/codex")
+        let payload = try XCTUnwrap(arguments.last?.replacingOccurrences(of: "notify=", with: ""))
+        let command = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String])
+        let marker = try XCTUnwrap(command.last)
+        var completions = 0
+        session.onTurnCompleted = { completions += 1 }
+        session.launch(executable: "/bin/cat", environment: ["PATH": "/usr/bin:/bin"])
+        session.monitorCompletions()
+        session.terminal.insertText("Check this change\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(session.awaitingResponse)
+        let file = try FileHandle(forWritingTo: URL(fileURLWithPath: marker))
+        file.seekToEndOfFile()
+        file.write(Data("x".utf8))
+        try file.close()
+        let notified = await waitFor { completions == 1 && !session.awaitingResponse }
+        XCTAssertTrue(notified, "Appending a completion marker should notify the session")
+        XCTAssertEqual(session.state, tr("已完成"))
+        await session.stop()
+    }
+    func testRapidSessionStopReapsChildren() async throws {
+        for index in 0..<8 {
+            let session = TerminalSession(tree: try tree("rapid-stop-\(index)"), provider: .terminal)
+            session.launch(executable: "/bin/sh", environment: ["PATH": "/usr/bin:/bin"], args: ["-c", "sleep 30"])
+            let pid = session.terminal.process.shellPid
+            XCTAssertGreaterThan(pid, 0)
+            await session.stop()
+            var status: Int32 = 0
+            XCTAssertEqual(waitpid(pid, &status, WNOHANG), -1, "Stopped child should already be reaped")
+            XCTAssertEqual(errno, ECHILD)
+        }
+    }
     func testPendingAndUnreadIndicatorsCoexistAcrossWorktrees() async throws {
         let firstTree = try tree("pending-and-completed")
         let secondPath = try tree("another-project").path

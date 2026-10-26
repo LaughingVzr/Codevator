@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import SwiftTerm
 import Combine
+import Darwin
+import Dispatch
 
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
@@ -38,7 +40,8 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
             }
         }
         onScreenUpdated?()
-        guard refreshWholeSurfaceAfterOutput else { return }
+        guard refreshWholeSurfaceAfterOutput,
+              let window, window.occlusionState.contains(.visible) else { return }
         lastOutputTime = DispatchTime.now().uptimeNanoseconds
         scheduleWholeSurfaceRefresh()
     }
@@ -46,17 +49,16 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     private func scheduleWholeSurfaceRefresh() {
         guard !wholeSurfaceRefreshScheduled else { return }
         wholeSurfaceRefreshScheduled = true
-        // SwiftTerm queues its own display update after receiving bytes. Keep
-        // repainting during a stream and once more after the last queued update,
-        // so a late partial draw cannot overwrite the final full repaint.
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(60)) { [weak self] in
+        // SwiftTerm may queue a partial draw after receiving bytes. Coalesce
+        // the corrective full redraws while output streams, then draw once
+        // more after the final partial update to prevent stale white cells.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) { [weak self] in
             guard let self else { return }
             self.wholeSurfaceRefreshScheduled = false
+            guard let window = self.window, window.occlusionState.contains(.visible) else { return }
             self.setNeedsDisplay(self.bounds)
             let elapsed = DispatchTime.now().uptimeNanoseconds - self.lastOutputTime
-            if elapsed < 100_000_000 {
-                self.scheduleWholeSurfaceRefresh()
-            }
+            if elapsed < 180_000_000 { self.scheduleWholeSurfaceRefresh() }
         }
     }
 
@@ -107,6 +109,12 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
             forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
+            self.setNeedsDisplay(self.bounds)
+        })
+        windowObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+        ) { [weak self, weak window] _ in
+            guard let self, let window, window.occlusionState.contains(.visible) else { return }
             self.setNeedsDisplay(self.bounds)
         })
         setNeedsDisplay(bounds)
@@ -246,7 +254,8 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     @Published private(set) var awaitingResponse = false
     private(set) var processGroup: pid_t = 0
     private let completionFile = FileManager.default.temporaryDirectory.appendingPathComponent("codevator-complete-" + UUID().uuidString)
-    private var completionTimer: Timer?
+    private var completionSource: DispatchSourceFileSystemObject?
+    private var completionTimer: Timer? // Fallback if opening the marker fails.
     private var completionLength: UInt64 = 0
     private var completionTrackingEnabled = false
     private var selectingCodexPermission = false
@@ -384,11 +393,29 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         return ["--settings", value]
     }
     func monitorCompletions() {
-        completionTimer?.invalidate()
+        completionSource?.cancel(); completionSource = nil
+        completionTimer?.invalidate(); completionTimer = nil
         completionLength = 0
-        completionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        let descriptor = Darwin.open(completionFile.path, O_EVTONLY)
+        guard descriptor >= 0 else {
+            // Keep completion notifications functional if the file watcher
+            // cannot be installed on this volume.
+            completionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkCompletions() }
+            }
+            return
+        }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor, eventMask: [.write, .extend], queue: .main
+        )
+        source.setEventHandler { [weak self] in
             MainActor.assumeIsolated { self?.checkCompletions() }
         }
+        source.setCancelHandler { Darwin.close(descriptor) }
+        completionSource = source
+        source.resume()
+        // An event may have arrived between opening the file and arming the source.
+        checkCompletions()
     }
     func checkCompletions() {
         guard active, !stopping,
@@ -402,6 +429,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         onTurnCompleted?()
     }
     private func stopCompletionMonitor() {
+        completionSource?.cancel(); completionSource = nil
         completionTimer?.invalidate(); completionTimer = nil
         try? FileManager.default.removeItem(at: completionFile)
     }
@@ -430,6 +458,18 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         else if pid > 0, terminal.process.running { kill(pid, SIGKILL) }
         for _ in 0..<50 where terminal.process.running { try? await Task.sleep(nanoseconds: 20_000_000) }
         if terminal.process.running { terminal.terminate() }
+        // PTY EOF can mark SwiftTerm's process as stopped before its exit
+        // monitor reaps the child. Retain this session until a fallback wait
+        // collects it, so closing a tab cannot leave a zombie behind.
+        if pid > 0 {
+            var status: Int32 = 0
+            for _ in 0..<25 {
+                let result = waitpid(pid, &status, WNOHANG)
+                if result == pid || (result == -1 && errno == ECHILD) { break }
+                if result == -1 && errno != EINTR { break }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+        }
         stopCompletionMonitor()
         processGroup = 0; awaitingResponse = false; active = false; stopping = false; state = tr("已停止")
     }
