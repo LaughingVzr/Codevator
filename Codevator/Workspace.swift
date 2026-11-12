@@ -21,9 +21,15 @@ final class Workspace: ObservableObject {
     var postCompletionNotification: (String, String, String) -> Void = { title, body, tabID in
         CompletionNotifier.post(title: title, body: body, tabID: tabID)
     }
+    var postAttentionNotification: (String, String, String) -> Void = { title, body, tabID in
+        CompletionNotifier.post(title: title, body: body, tabID: tabID)
+    }
     init(store: ConfigurationStore = .init(), confirmation: ((String, String, String) -> Bool)? = nil) {
         self.store = store; self.confirmation = confirmation
         sessions.onTurnCompleted = { [weak self] tabID, session in self?.turnCompleted(tabID: tabID, session: session) }
+        sessions.onAttentionChanged = { [weak self] tabID, session, waiting in
+            self?.attentionChanged(tabID: tabID, session: session, waiting: waiting)
+        }
         sessionObservation = sessions.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.objectWillChange.send() }
         }
@@ -44,9 +50,24 @@ final class Workspace: ObservableObject {
         sessions.markRead(tabID); updateDockBadge()
     }
     private func updateDockBadge() {
-        let count = sessions.unreadCompletions.count
+        let count = sessions.unreadCompletions.count + sessions.sessions.values.filter(\.needsAttention).count
         NSApp.dockTile.badgeLabel = count == 0 ? nil : String(count)
         NSApp.dockTile.display()
+    }
+    private func attentionChanged(tabID: String, session: TerminalSession, waiting: Bool) {
+        guard sessions.tabs(for: session.treeID).contains(where: { $0.id == tabID }) else { return }
+        updateDockBadge()
+        guard waiting else { return }
+        let visible = NSApp.isActive && NSApp.keyWindow?.title == "Codevator" &&
+            selection == session.treeID && sessions.selectedTabIDs[session.treeID] == tabID
+        guard !visible else { return }
+        let project = configuration.projects.first(where: { $0.id == session.treeID.components(separatedBy: "\n").first })
+        let projectName = project?.name ?? tr("项目")
+        let worktreeName = project.flatMap { project in
+            displayTrees(project.id).first(where: { $0.id == session.treeID })?.displayName(projectName: project.name)
+        } ?? URL(fileURLWithPath: session.path).lastPathComponent
+        postAttentionNotification(String(format: tr("%@ 等待你处理"), session.provider.title),
+                                  "\(projectName) · \(worktreeName)", tabID)
     }
     private func turnCompleted(tabID: String, session: TerminalSession) {
         guard session.provider != .terminal else { return }

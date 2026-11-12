@@ -440,6 +440,10 @@ struct WorkspaceView: View {
                 .font(.caption)
             }
             Spacer(minLength: 4)
+            if workspace.sessions.attentionCount(in: tree.id) > 0 {
+                AttentionBadge(count: workspace.sessions.attentionCount(in: tree.id))
+                    .accessibilityIdentifier("worktreeAttention-\(tree.path)")
+            }
             if workspace.sessions.pendingCount(in: tree.id) > 0 {
                 PendingBadge(count: workspace.sessions.pendingCount(in: tree.id))
                     .accessibilityIdentifier("worktreePending-\(tree.path)")
@@ -467,6 +471,10 @@ struct WorkspaceView: View {
             Text(project.name).fontWeight(.medium)
             if workspace.busy.contains(project.id) { ProgressView().controlSize(.small) }
             Spacer(minLength: 4)
+            if workspace.sessions.attentionCount(forProject: project.id) > 0 {
+                AttentionBadge(count: workspace.sessions.attentionCount(forProject: project.id))
+                    .accessibilityIdentifier("projectAttention-\(project.id)")
+            }
             if workspace.sessions.pendingCount(forProject: project.id) > 0 {
                 PendingBadge(count: workspace.sessions.pendingCount(forProject: project.id))
                     .accessibilityIdentifier("projectPending-\(project.id)")
@@ -553,7 +561,11 @@ struct WorktreeDetail: View {
                             if manager.unreadCompletions.contains(tab.id) {
                                 Circle().fill(.orange).frame(width: 6, height: 6)
                             }
-                            if manager.sessions[tab.id]?.awaitingResponse == true {
+                            if manager.sessions[tab.id]?.needsAttention == true {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundStyle(.yellow)
+                                    .font(.system(size: 10))
+                            } else if manager.sessions[tab.id]?.awaitingResponse == true {
                                 Circle().fill(.green).frame(width: 5, height: 5)
                             }
                         }
@@ -657,6 +669,19 @@ private struct PendingBadge: View {
         .background(Color.green.opacity(0.13), in: Capsule())
         .accessibilityLabel("\(count) 个会话正在等待回复")
         .help("\(count) 个会话正在等待回复")
+    }
+}
+
+private struct AttentionBadge: View {
+    let count: Int
+    var body: some View {
+        Label(String(count), systemImage: "exclamationmark.circle.fill")
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Color.orange.opacity(0.14), in: Capsule())
+            .accessibilityLabel("\(count) 个会话等待你处理")
+            .help("\(count) 个会话等待你处理")
     }
 }
 

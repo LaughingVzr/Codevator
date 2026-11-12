@@ -9,8 +9,10 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
     private var windowObservers: [NSObjectProtocol] = []
     var prefersLocalTextSelection = false
+    var supportsCodexImagePaste = false
     var onSubmittedInput: ((String) -> Void)?
     var onInterruptedInput: (() -> Void)?
+    var onAnsweredPrompt: (() -> Void)?
     var onPermissionSelectionCompleted: (() -> Void)?
     var onPermissionMenuOpened: (() -> Void)?
     var onScreenUpdated: (() -> Void)?
@@ -67,8 +69,13 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
         let encoded = String(decoding: data, as: UTF8.self)
         // SwiftTerm sends Return as CR in normal mode and as a Kitty key
         // sequence when a CLI enables enhanced keyboard reporting.
-        if data.contains(10) || data.contains(13) ||
-            encoded == "\u{1B}[13u" || encoded == "\u{1B}[13;1u" {
+        let submitted = data.contains(10) || data.contains(13) ||
+            encoded == "\u{1B}[13u" || encoded == "\u{1B}[13;1u"
+        if submitted || encoded == "\u{1B}" || encoded == "\u{1B}[27u" ||
+            (data.count == 1 && data.first.map({ (49...57).contains($0) || $0 == 121 || $0 == 110 }) == true) {
+            onAnsweredPrompt?()
+        }
+        if submitted {
             discardUncommittedText()
             onSubmittedInput?(draftInput)
             draftInput = ""
@@ -90,8 +97,26 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     }
 
     override func paste(_ sender: Any) {
-        if let text = NSPasteboard.general.string(forType: .string) { draftInput += text }
+        let clipboard = NSPasteboard.general
+        if supportsCodexImagePaste && clipboardContainsImage(clipboard) {
+            // Codex reads the image from the native clipboard on Ctrl+V.
+            // SwiftTerm's paste only forwards plain text, so a Mac paste
+            // shortcut needs to forward that key when the clipboard has image data.
+            draftInput += "\u{FFFC}"
+            send(source: self, data: ArraySlice<UInt8>([0x16]))
+            return
+        }
+        if let text = clipboard.string(forType: .string) { draftInput += text }
         super.paste(sender)
+    }
+
+    private func clipboardContainsImage(_ clipboard: NSPasteboard) -> Bool {
+        if clipboard.availableType(from: [.png, .tiff]) != nil ||
+            clipboard.canReadObject(forClasses: [NSImage.self], options: nil) { return true }
+        let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp"]
+        let fileURLs = clipboard.readObjects(forClasses: [NSURL.self],
+                                             options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return fileURLs.contains { imageExtensions.contains($0.pathExtension.lowercased()) }
     }
 
     override func viewDidMoveToWindow() {
@@ -252,15 +277,19 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     @Published var active = true
     @Published var stopping = false
     @Published private(set) var awaitingResponse = false
+    @Published private(set) var needsAttention = false
     private(set) var processGroup: pid_t = 0
     private let completionFile = FileManager.default.temporaryDirectory.appendingPathComponent("codevator-complete-" + UUID().uuidString)
     private var completionSource: DispatchSourceFileSystemObject?
     private var completionTimer: Timer? // Fallback if opening the marker fails.
     private var completionLength: UInt64 = 0
     private var completionTrackingEnabled = false
+    private var attentionNotifiedForTurn = false
+    private var suppressScreenAttentionUntilClear = false
     private var selectingCodexPermission = false
     private var codexPermissionMenuWasVisible = false
     var onTurnCompleted: (() -> Void)?
+    var onAttentionChanged: ((Bool) -> Void)?
     var hasManagedProcesses: Bool { active || stopping || (processGroup > 0 && kill(-processGroup, 0) == 0) }
 
     init(tree: Worktree, provider: CLIProvider, fontSize: Int = TerminalFontSize.defaultValue) {
@@ -270,6 +299,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         // Codex and Claude may enable mouse tracking after entering their TUI.
         // Keep left-button text selection local so copying remains predictable.
         terminal.prefersLocalTextSelection = provider != .terminal
+        terminal.supportsCodexImagePaste = provider == .codex
         terminal.setAccessibilityElement(true)
         terminal.setAccessibilityRole(.textArea)
         terminal.setAccessibilityLabel(provider == .terminal ? provider.title : provider.title + tr(" 终端"))
@@ -286,10 +316,17 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         super.init(); terminal.processDelegate = self
         terminal.onSubmittedInput = { [weak self] input in self?.markSubmittedInput(input) }
         terminal.onInterruptedInput = { [weak self] in self?.markInterruptedInput() }
+        terminal.onAnsweredPrompt = { [weak self] in self?.answeredHumanInputPrompt() }
+        if provider != .terminal {
+            terminal.onScreenUpdated = { [weak self] in self?.checkHumanInputPrompt() }
+        }
         if provider == .codex {
             terminal.onPermissionSelectionCompleted = { [weak self] in self?.finishCodexPermissionSelection() }
             terminal.onPermissionMenuOpened = { [weak self] in self?.beginCodexPermissionSelection() }
-            terminal.onScreenUpdated = { [weak self] in self?.checkCodexPermissionMenu() }
+            terminal.onScreenUpdated = { [weak self] in
+                self?.checkCodexPermissionMenu()
+                self?.checkHumanInputPrompt()
+            }
         }
     }
     private func markSubmittedInput(_ input: String) {
@@ -308,6 +345,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         }
         guard !text.isEmpty else { return }
         guard completionTrackingEnabled, active, !stopping, terminal.process.running else { return }
+        attentionNotifiedForTurn = false
+        suppressScreenAttentionUntilClear = false
+        setNeedsAttention(false)
         awaitingResponse = true
         state = tr("回复中")
     }
@@ -318,12 +358,14 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         // menu key can be mistaken for a submitted prompt when Codex redraws
         // its input area; the result line is authoritative for this flow.
         awaitingResponse = false
+        setNeedsAttention(false)
         state = tr("已就绪")
     }
     private func beginCodexPermissionSelection() {
         selectingCodexPermission = true
         codexPermissionMenuWasVisible = true
         awaitingResponse = false
+        setNeedsAttention(false)
         state = tr("已就绪")
     }
     private func checkCodexPermissionMenu() {
@@ -344,7 +386,39 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         codexPermissionMenuWasVisible = false
         guard awaitingResponse else { return }
         awaitingResponse = false
+        setNeedsAttention(false)
         state = tr("已就绪")
+    }
+    private func answeredHumanInputPrompt() {
+        guard needsAttention else { return }
+        setNeedsAttention(false)
+        attentionNotifiedForTurn = false
+        suppressScreenAttentionUntilClear = true
+    }
+    private func setNeedsAttention(_ value: Bool) {
+        guard needsAttention != value else { return }
+        needsAttention = value
+        if value {
+            state = tr("等待处理")
+            if !attentionNotifiedForTurn {
+                attentionNotifiedForTurn = true
+                onAttentionChanged?(true)
+            }
+        } else {
+            onAttentionChanged?(false)
+            if awaitingResponse { state = tr("回复中") }
+        }
+    }
+    private func checkHumanInputPrompt() {
+        guard active, !stopping, awaitingResponse, !selectingCodexPermission,
+              let screen = terminal.accessibilityValue() as? String else { return }
+        let waiting = HumanInputPromptDetector.isWaiting(screen)
+        if suppressScreenAttentionUntilClear {
+            if !waiting { suppressScreenAttentionUntilClear = false }
+            return
+        }
+        if provider == .claude, needsAttention, !waiting { return }
+        setNeedsAttention(waiting)
     }
     func setFontSize(_ size: Int) {
         guard Int(terminal.font.pointSize) != size else { return }
@@ -386,7 +460,11 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
             return ["-c", "notify=" + value]
         }
         let quotedPath = "'" + completionFile.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let settings: [String: Any] = ["hooks": ["Stop": [["hooks": [["type": "command", "command": "umask 077; printf x >> " + quotedPath]]]]]]
+        let settings: [String: Any] = ["hooks": [
+            "Stop": [["hooks": [["type": "command", "command": "umask 077; printf x >> " + quotedPath]]]],
+            "Notification": [["matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input",
+                              "hooks": [["type": "command", "command": "umask 077; printf h >> " + quotedPath]]]]
+        ]]
         guard let data = try? JSONSerialization.data(withJSONObject: settings),
               let value = String(data: data, encoding: .utf8) else { return [] }
         completionTrackingEnabled = true
@@ -419,21 +497,30 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     }
     func checkCompletions() {
         guard active, !stopping,
-              let size = (try? FileManager.default.attributesOfItem(atPath: completionFile.path)[.size]) as? NSNumber else { return }
-        let length = size.uint64Value
-        guard length > completionLength else { return }
-        completionLength = length
-        guard awaitingResponse else { return }
-        awaitingResponse = false
-        state = tr("已完成")
-        onTurnCompleted?()
+              let data = try? Data(contentsOf: completionFile),
+              UInt64(data.count) > completionLength else { return }
+        let events = data.dropFirst(Int(completionLength))
+        completionLength = UInt64(data.count)
+        for event in events {
+            switch event {
+            case UInt8(ascii: "h"):
+                if awaitingResponse { setNeedsAttention(true) }
+            case UInt8(ascii: "x"):
+                setNeedsAttention(false)
+                guard awaitingResponse else { continue }
+                awaitingResponse = false
+                state = tr("已完成")
+                onTurnCompleted?()
+            default: break
+            }
+        }
     }
     private func stopCompletionMonitor() {
         completionSource?.cancel(); completionSource = nil
         completionTimer?.invalidate(); completionTimer = nil
         try? FileManager.default.removeItem(at: completionFile)
     }
-    func fail(_ message: String) { stopCompletionMonitor(); awaitingResponse = false; active = false; state = tr("失败：") + message }
+    func fail(_ message: String) { stopCompletionMonitor(); awaitingResponse = false; setNeedsAttention(false); active = false; state = tr("失败：") + message }
     func stop() async {
         if stopping {
             while stopping { try? await Task.sleep(nanoseconds: 20_000_000) }
@@ -471,7 +558,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
             }
         }
         stopCompletionMonitor()
-        processGroup = 0; awaitingResponse = false; active = false; stopping = false; state = tr("已停止")
+        processGroup = 0; awaitingResponse = false; setNeedsAttention(false); active = false; stopping = false; state = tr("已停止")
     }
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
@@ -480,6 +567,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         checkCompletions()
         stopCompletionMonitor()
         awaitingResponse = false
+        setNeedsAttention(false)
         active = false
         if !stopping {
             if let status = exitCode {
@@ -497,6 +585,26 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
                 self.processGroup = 0
             }
         }
+    }
+}
+
+// Detect only interactive prompts in the visible terminal buffer. A question
+// quoted in an agent reply should not turn into a notification by itself.
+enum HumanInputPromptDetector {
+    static func isWaiting(_ screen: String) -> Bool {
+        let lines = screen.split(separator: "\n", omittingEmptySubsequences: true).suffix(24)
+        let visible = lines.joined(separator: "\n").lowercased()
+        let isQuestionnaire = visible.range(of: #"question [0-9]+/[0-9]+"#, options: .regularExpression) != nil &&
+            (visible.contains("select to continue") || visible.contains("enter to submit") || visible.contains("press enter for next"))
+        let asksForAction = isQuestionnaire || [
+            "would you like to run", "would you like to make", "do you want to approve",
+            "do you want to allow", "allow this command", "approve this command",
+            "select an option", "choose an option", "waiting for your input",
+            "permission required", "needs your approval", "ask user question"
+        ].contains { visible.contains($0) }
+        let hasChoices = ["esc to cancel", "press enter", "yes, proceed", "no, cancel",
+                          "1. yes", "2. no", "allow once", "deny", "enter to select"].contains { visible.contains($0) }
+        return isQuestionnaire || (asksForAction && hasChoices)
     }
 }
 
@@ -523,6 +631,7 @@ final class SessionManager: ObservableObject {
     @Published private(set) var unreadCompletions: Set<String> = []
     @Published private(set) var fontSize: Int
     var onTurnCompleted: ((String, TerminalSession) -> Void)?
+    var onAttentionChanged: ((String, TerminalSession, Bool) -> Void)?
     let resolver = CLIResolver()
     private let defaults: UserDefaults
     private var observations: [String: AnyCancellable] = [:]
@@ -571,6 +680,10 @@ final class SessionManager: ObservableObject {
               let index = tabsByTree[tree.id]?.firstIndex(where: { $0.id == tabID }) else { return }
         tabsByTree[tree.id]?[index].provider = provider
         let session = TerminalSession(tree: tree, provider: provider, fontSize: fontSize)
+        session.onAttentionChanged = { [weak self, weak session] waiting in
+            guard let self, let session, self.sessions[tabID] === session else { return }
+            self.onAttentionChanged?(tabID, session, waiting)
+        }
         session.onTurnCompleted = { [weak self, weak session] in
             guard let self, let session, self.sessions[tabID] === session else { return }
             self.onTurnCompleted?(tabID, session)
@@ -602,7 +715,7 @@ final class SessionManager: ObservableObject {
     }
     func pendingCount(in treeID: String) -> Int {
         tabs(for: treeID).reduce(0) { count, tab in
-            count + (sessions[tab.id]?.awaitingResponse == true ? 1 : 0)
+            count + (sessions[tab.id]?.awaitingResponse == true && sessions[tab.id]?.needsAttention == false ? 1 : 0)
         }
     }
     func pendingCount(forProject projectID: String) -> Int {
@@ -630,6 +743,10 @@ final class SessionManager: ObservableObject {
     func stopAll() async { for session in sessions.values { await session.stop() }; objectWillChange.send() }
     func running(in treeID: String) -> [TerminalSession] { running.filter { $0.treeID == treeID } }
     var running: [TerminalSession] { sessions.values.filter { $0.hasManagedProcesses } }
+    func attentionCount(in treeID: String) -> Int { tabs(for: treeID).filter { sessions[$0.id]?.needsAttention == true }.count }
+    func attentionCount(forProject projectID: String) -> Int {
+        tabsByTree.keys.filter { $0.hasPrefix(projectID + "\n") }.reduce(0) { $0 + attentionCount(in: $1) }
+    }
 }
 
 final class TerminalContainerView: NSView {

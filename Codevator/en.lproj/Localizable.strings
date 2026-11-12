@@ -147,3 +147,7 @@
 "无法读取登录环境" = "Could not read login environment";
 "CLI 路径必须为绝对路径" = "CLI path must be absolute";
 "找不到可执行的 %@，请安装后重新检测或设置绝对路径" = "Could not find an executable %@. Install it, detect again, or set its absolute path";
+
+"%@ 等待你处理" = "%@ needs your input";
+"等待处理" = "Needs input";
+"%lld 个会话等待你处理" = "%lld sessions need your input";

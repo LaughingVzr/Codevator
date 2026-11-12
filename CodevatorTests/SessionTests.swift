@@ -244,6 +244,87 @@ final class SessionTests: XCTestCase {
         claude.fail("测试结束")
     }
 
+    func testHumanInputPromptDetectorRequiresInteractiveChoices() {
+        XCTAssertTrue(HumanInputPromptDetector.isWaiting("Would you like to run the following command?\n1. Yes, proceed\n2. No, cancel"))
+        XCTAssertTrue(HumanInputPromptDetector.isWaiting("Do you want to allow access?\nPress Enter to confirm · Esc to cancel"))
+        XCTAssertFalse(HumanInputPromptDetector.isWaiting("The README says: Would you like to run this command?"))
+        XCTAssertFalse(HumanInputPromptDetector.isWaiting("Permission selection requested: Full Access"))
+        XCTAssertTrue(HumanInputPromptDetector.isWaiting("Question 1/2\nWhich approach?\n1. First\n2. Second\nPress Enter for Next"))
+    }
+
+    func testCodexApprovalScreenRequestsAttentionAndRearms() async throws {
+        let session = TerminalSession(tree: try tree("codex-approval"), provider: .codex)
+        session.terminal.resize(cols: 100, rows: 30)
+        XCTAssertFalse(session.completionArguments(for: "/opt/homebrew/bin/codex").isEmpty)
+        session.launch(executable: "/bin/cat", environment: ["PATH": "/usr/bin:/bin"])
+        session.terminal.insertText("Review this\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        var events: [Bool] = []
+        session.onAttentionChanged = { events.append($0) }
+        let prompt = Array("\u{1B}[2J\u{1B}[HWould you like to run the following command?\r\n1. Yes, proceed\r\n2. No, cancel\r\nPress enter to confirm or esc to cancel".utf8)
+        session.terminal.dataReceived(slice: prompt[...])
+        XCTAssertTrue(session.needsAttention, text(session))
+        session.terminal.dataReceived(slice: prompt[...])
+        XCTAssertEqual(events, [true])
+        session.terminal.send(source: session.terminal, data: ArraySlice<UInt8>([49]))
+        XCTAssertFalse(session.needsAttention)
+        session.terminal.dataReceived(slice: prompt[...])
+        XCTAssertFalse(session.needsAttention)
+        let cleared = Array("\u{1B}[2J\u{1B}[HWorking on your request".utf8)
+        session.terminal.dataReceived(slice: cleared[...])
+        session.terminal.dataReceived(slice: prompt[...])
+        XCTAssertTrue(session.needsAttention)
+        XCTAssertEqual(events, [true, false, true])
+        session.terminal.send(source: session.terminal, data: ArraySlice("\u{1B}[13u".utf8))
+        XCTAssertFalse(session.needsAttention)
+        await session.stop()
+    }
+
+    func testHumanInputEventNotifiesOnceAndClearsWhenAnswered() async throws {
+        let tree = try tree("human-input")
+        let session = TerminalSession(tree: tree, provider: .claude)
+        let arguments = session.completionArguments(for: "/opt/homebrew/bin/claude")
+        let settings = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(arguments.last).utf8)) as? [String: Any])
+        let hooks = try XCTUnwrap(settings["hooks"] as? [String: Any])
+        XCTAssertNotNil(hooks["Notification"])
+        let stop = try XCTUnwrap((hooks["Stop"] as? [[String: Any]])?.first)
+        let stopHooks = try XCTUnwrap(stop["hooks"] as? [[String: String]])
+        let command = try XCTUnwrap(stopHooks.first?["command"])
+        let marker = try XCTUnwrap(command.components(separatedBy: " >> ").last)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "'"))
+        session.launch(executable: "/bin/cat", environment: ["PATH": "/usr/bin:/bin"])
+        var attentionEvents: [Bool] = []
+        var completions = 0
+        session.onAttentionChanged = { attentionEvents.append($0) }
+        session.onTurnCompleted = { completions += 1 }
+        session.terminal.insertText("Check this\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        try Data("hh".utf8).write(to: URL(fileURLWithPath: marker))
+        session.checkCompletions()
+        XCTAssertTrue(session.needsAttention)
+        XCTAssertEqual(attentionEvents, [true])
+        session.terminal.insertText("1\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertFalse(session.needsAttention)
+        XCTAssertEqual(attentionEvents, [true, false])
+        try Data("hhhx".utf8).write(to: URL(fileURLWithPath: marker))
+        session.checkCompletions()
+        XCTAssertFalse(session.needsAttention)
+        XCTAssertEqual(attentionEvents, [true, false, true, false])
+        XCTAssertEqual(completions, 1)
+        await session.stop()
+    }
+
+    func testBackgroundHumanInputPostsNotificationForCorrectWorktree() throws {
+        let tree = try tree("attention")
+        let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("attention-workspace.json")))
+        let tab = workspace.sessions.createTab(for: tree.id, provider: .codex)
+        var delivered: [(String, String, String)] = []
+        workspace.postAttentionNotification = { delivered.append(($0, $1, $2)) }
+        workspace.sessions.onAttentionChanged?(tab.id, TerminalSession(tree: tree, provider: .codex), true)
+        XCTAssertEqual(delivered.count, 1)
+        XCTAssertTrue(delivered[0].0.contains("Codex"))
+        XCTAssertTrue(delivered[0].1.contains("attention"))
+        XCTAssertEqual(delivered[0].2, tab.id)
+    }
+
     func testAICompletionPlaysSoundAndBackgroundNotificationOnce() throws {
         let tree = try tree("sound")
         let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("sound-workspace.json")))
@@ -524,6 +605,37 @@ final class SessionTests: XCTestCase {
         XCTAssertFalse(session.terminal.hasMarkedText())
         await session.stop()
     }
+    func testCodexImagePasteForwardsClipboardShortcut() async throws {
+        let pasteboard = NSPasteboard.general
+        let original = (pasteboard.pasteboardItems ?? []).map { item in
+            let clone = NSPasteboardItem()
+            for type in item.types { if let data = item.data(forType: type) { clone.setData(data, forType: type) } }
+            return clone
+        }
+        defer { pasteboard.clearContents(); if !original.isEmpty { pasteboard.writeObjects(original) } }
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 4, bitsPerPixel: 32))
+        bitmap.setColor(.red, atX: 0, y: 0)
+        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setData(png, forType: .png))
+
+        let session = TerminalSession(tree: try tree("image-paste"), provider: .codex)
+        session.launch(executable: "/bin/sh", environment: ["PATH": "/usr/bin:/bin"],
+                       args: ["-c", "stty -icanon -echo -iexten; printf 'READY\n'; od -An -tu1 -N1"])
+        let ready = await waitFor { self.text(session).contains("READY") }
+        XCTAssertTrue(ready)
+        session.terminal.paste(self)
+        let forwarded = await waitFor { self.text(session).contains("22") }
+        XCTAssertTrue(forwarded, text(session))
+        var submitted = ""
+        session.terminal.onSubmittedInput = { submitted = $0 }
+        session.terminal.send(source: session.terminal, data: ArraySlice<UInt8>([13]))
+        XCTAssertEqual(submitted, "\u{FFFC}")
+        await session.stop()
+    }
+
     func testTerminalCopyPreservesUnicode() throws {
         let pasteboard = NSPasteboard.general
         let original = (pasteboard.pasteboardItems ?? []).map { item in
