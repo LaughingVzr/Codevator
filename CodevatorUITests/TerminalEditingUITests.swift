@@ -148,7 +148,7 @@ final class TerminalEditingUITests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixture + "/.git") else { throw XCTSkip("Requires disposable Git fixture") }
         let config = folder.appendingPathComponent("workspace.json")
         let common = fixture + "/.git"
-        let data: [String: Any] = ["schemaVersion": 1, "projects": [["id": common, "name": "UI Test", "directory": fixture, "expanded": true]], "selection": common + "\n" + fixture, "cliPaths": ["codex": "/bin/cat", "claude": "/bin/cat"]]
+        let data: [String: Any] = ["schemaVersion": 1, "projects": [["id": common, "name": "UI Test", "directory": fixture, "expanded": true]], "selection": common + "\n" + fixture, "cliPaths": ["codex": "/bin/cat", "claude": "/bin/cat", "antigravity": "/bin/cat"]]
         try JSONSerialization.data(withJSONObject: data).write(to: config)
         let app = XCUIApplication()
         app.launchEnvironment["CODEVATOR_UI_TEST_CONFIG"] = config.path
@@ -164,6 +164,11 @@ final class TerminalEditingUITests: XCTestCase {
         XCTAssertTrue(openTerminal.waitForExistence(timeout: 10))
         app.buttons["新建 Claude 标签"].click()
         XCTAssertTrue(app.textViews["Claude 终端"].waitForExistence(timeout: 20))
+        app.buttons["新建 Antigravity 标签"].click()
+        XCTAssertTrue(app.textViews["Antigravity 终端"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Antigravity 标签"].exists)
+        app.buttons["停止"].click()
+        app.buttons["关闭 Antigravity 标签"].click()
         XCTAssertEqual(app.buttons.matching(identifier: "Codex 标签").count, 1)
         XCTAssertEqual(app.buttons.matching(identifier: "Claude 标签").count, 1)
         let codexTab = app.buttons["Codex 标签"]

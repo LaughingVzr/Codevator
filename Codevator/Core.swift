@@ -301,13 +301,15 @@ actor GitService {
 }
 
 enum CLIProvider: String, CaseIterable, Identifiable {
-    case codex, claude, terminal
-    static let aiCases: [CLIProvider] = [.codex, .claude]
+    case codex, claude, antigravity, terminal
+    static let aiCases: [CLIProvider] = [.codex, .claude, .antigravity]
     var id: String { rawValue }
+    var executableName: String { self == .antigravity ? "agy" : rawValue }
     var title: String {
         switch self {
         case .codex: return "Codex"
         case .claude: return "Claude"
+        case .antigravity: return "Antigravity"
         case .terminal: return tr("终端")
         }
     }
@@ -354,7 +356,7 @@ actor CLIResolver {
         if let override, !override.isEmpty {
             guard override.hasPrefix("/") else { throw WorkspaceError("CLI 路径必须为绝对路径") }
             paths = [override]
-        } else { paths = (env["PATH"] ?? "").split(separator: ":").map { String($0) + "/" + provider.rawValue } }
+        } else { paths = (env["PATH"] ?? "").split(separator: ":").map { String($0) + "/" + provider.executableName } }
         guard let executable = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) && !((try? URL(fileURLWithPath: $0).resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }) else { throw WorkspaceError(String(format: tr("找不到可执行的 %@，请安装后重新检测或设置绝对路径"), provider.title)) }
         return (executable, env)
     }

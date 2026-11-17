@@ -7,6 +7,7 @@ import Dispatch
 
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
+    private var wheelMonitor: Any?
     private var windowObservers: [NSObjectProtocol] = []
     var prefersLocalTextSelection = false
     var supportsCodexImagePaste = false
@@ -21,6 +22,8 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     var refreshWholeSurfaceAfterOutput = false
     private var wholeSurfaceRefreshScheduled = false
     private var lastOutputTime: UInt64 = 0
+    private var selectionScrollTimer: Timer?
+    private var selectionScrollColumn = 0
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
@@ -122,9 +125,10 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let editingMonitor { NSEvent.removeMonitor(editingMonitor); self.editingMonitor = nil }
+        if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor); self.wheelMonitor = nil }
         windowObservers.forEach(NotificationCenter.default.removeObserver)
         windowObservers.removeAll()
-        guard let window else { discardUncommittedText(); return }
+        guard let window else { stopSelectionScroll(); discardUncommittedText(); return }
         // SwiftTerm's IME preview is a separate, non-editable subview. Clear it
         // when focus or hosting changes so it cannot cover Codex's next prompt.
         windowObservers.append(NotificationCenter.default.addObserver(
@@ -143,6 +147,16 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
             self.setNeedsDisplay(self.bounds)
         })
         setNeedsDisplay(bounds)
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, self.prefersLocalTextSelection, !self.selection.active,
+                  self.getTerminal().isCurrentBufferAlternate, event.window === self.window,
+                  self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else { return event }
+            // Let SwiftTerm forward the wheel to an alternate-screen AI menu.
+            // Restore local selection mode after the event has been dispatched.
+            self.allowMouseReporting = true
+            DispatchQueue.main.async { [weak self] in self?.allowMouseReporting = false }
+            return event
+        }
         editingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c" { self?.traceEditing("monitor", event: event) }
             guard let self, let window = self.window, window.isKeyWindow, window.firstResponder === self else { return event }
@@ -159,6 +173,8 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
 
     deinit {
         if let editingMonitor { NSEvent.removeMonitor(editingMonitor) }
+        if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+        selectionScrollTimer?.invalidate()
         windowObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -194,9 +210,35 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
 
     override func mouseDragged(with event: NSEvent) {
         withTextSelectionOverride(event) { super.mouseDragged(with: event) }
+        // SwiftTerm clamps the hit row to the last buffer line before checking
+        // whether a drag crossed the bottom edge. Drive that edge ourselves.
+        let point = convert(event.locationInWindow, from: nil)
+        if selection.active, !getTerminal().isCurrentBufferAlternate,
+           point.y < bounds.minY {
+            selectionScrollColumn = min(max(0, characterIndex(for: event.locationInWindow) % getTerminal().cols), getTerminal().cols - 1)
+            if selectionScrollTimer == nil {
+                let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+                    guard let self else { return }
+                    let terminal = self.getTerminal()
+                    let oldRow = terminal.buffer.yDisp
+                    self.scrollDown(lines: 2)
+                    guard terminal.buffer.yDisp != oldRow else { self.stopSelectionScroll(); return }
+                    self.selection.dragExtend(row: terminal.rows - 1, col: self.selectionScrollColumn)
+                    self.setNeedsDisplay(self.bounds)
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                selectionScrollTimer = timer
+            }
+        } else { stopSelectionScroll() }
+    }
+
+    private func stopSelectionScroll() {
+        selectionScrollTimer?.invalidate()
+        selectionScrollTimer = nil
     }
 
     override func mouseUp(with event: NSEvent) {
+        stopSelectionScroll()
         withTextSelectionOverride(event) { super.mouseUp(with: event) }
         traceEditing("mouseUp", event: event)
     }
@@ -299,6 +341,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         // Codex and Claude may enable mouse tracking after entering their TUI.
         // Keep left-button text selection local so copying remains predictable.
         terminal.prefersLocalTextSelection = provider != .terminal
+        // SwiftTerm clears selection on every output chunk and linefeed when
+        // mouse reporting is enabled, even after a local drag has ended.
+        terminal.allowMouseReporting = provider == .terminal
         terminal.supportsCodexImagePaste = provider == .codex
         terminal.setAccessibilityElement(true)
         terminal.setAccessibilityRole(.textArea)
@@ -457,7 +502,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
             guard let data = try? JSONSerialization.data(withJSONObject: argv, options: [.withoutEscapingSlashes]),
                   let value = String(data: data, encoding: .utf8) else { return [] }
             completionTrackingEnabled = true
-            return ["-c", "notify=" + value]
+            return ["--no-alt-screen", "-c", "notify=" + value]
         }
         let quotedPath = "'" + completionFile.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let settings: [String: Any] = ["hooks": [

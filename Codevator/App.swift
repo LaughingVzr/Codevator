@@ -637,7 +637,7 @@ struct WorktreeDetail: View {
                     ContentUnavailableView {
                         Label("选择工具", systemImage: "terminal")
                     } description: {
-                        Text("在此标签中启动 Codex、Claude 或终端。")
+                        Text("在此标签中启动 Codex、Claude、Antigravity 或终端。")
                     } actions: {
                         HStack {
                             ForEach(CLIProvider.allCases) { provider in
@@ -704,6 +704,7 @@ struct CLIProviderIcon: View {
         switch provider {
         case .codex: "chevron.left.forwardslash.chevron.right"
         case .claude: "asterisk"
+        case .antigravity: "sparkles"
         case .terminal: "terminal"
         }
     }
@@ -711,15 +712,26 @@ struct CLIProviderIcon: View {
         switch provider {
         case .codex: .teal
         case .claude: Color(red: 0.85, green: 0.42, blue: 0.27)
+        case .antigravity: Color(red: 0.46, green: 0.38, blue: 0.94)
         case .terminal: .secondary
         }
     }
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(tint)
-            .frame(width: 16, height: 16)
-            .accessibilityHidden(true)
+        Group {
+            if provider == .antigravity {
+                Image("AntigravityIcon")
+                    .renderingMode(.original)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
     }
 }
 

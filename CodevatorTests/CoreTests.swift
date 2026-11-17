@@ -177,6 +177,9 @@ final class CoreTests: XCTestCase {
         let resolver = CLIResolver()
         let (path, env) = try await resolver.resolve(.codex, override: "/bin/sh")
         XCTAssertEqual(path, "/bin/sh"); XCTAssertEqual(env["TERM"], "xterm-256color"); XCTAssertFalse(env["PATH", default: ""].isEmpty)
+        XCTAssertEqual(CLIProvider.antigravity.executableName, "agy")
+        let (antigravityPath, _) = try await resolver.resolve(.antigravity, override: "/bin/sh")
+        XCTAssertEqual(antigravityPath, "/bin/sh")
         await expectError { _ = try await resolver.resolve(.codex, override: "relative/path") }
         await expectError { _ = try await resolver.resolve(.claude, override: self.root.appendingPathComponent("missing").path) }
         let file = root.appendingPathComponent("nonexec"); try Data().write(to: file)

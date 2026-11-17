@@ -205,7 +205,7 @@ final class SessionTests: XCTestCase {
 
         let codex = TerminalSession(tree: firstTree, provider: .codex)
         let args = codex.completionArguments(for: "/opt/homebrew/bin/codex")
-        XCTAssertEqual(args.first, "-c")
+        XCTAssertEqual(args.prefix(2), ["--no-alt-screen", "-c"])
         let payload = try XCTUnwrap(args.last?.replacingOccurrences(of: "notify=", with: ""))
         let command = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String])
         let marker = try XCTUnwrap(command.last)
@@ -543,7 +543,7 @@ final class SessionTests: XCTestCase {
         await session.stop()
     }
     func testCommandArrowsSendLineNavigationToEveryCLI() async throws {
-        for provider in [CLIProvider.terminal, .codex, .claude] {
+        for provider in [CLIProvider.terminal, .codex, .claude, .antigravity] {
             let session = TerminalSession(tree: try tree("command-arrows-" + provider.rawValue), provider: provider)
             session.launch(executable: "/bin/sh", environment: ["PATH": "/usr/bin:/bin"], args: ["-c", "stty -icanon -echo; echo READY; dd bs=1 count=2 2>/dev/null | od -An -tx1; echo DONE"])
             let ready = await waitFor { self.text(session).contains("READY") }
@@ -672,6 +672,29 @@ final class SessionTests: XCTestCase {
         XCTAssertTrue(pasteboard.string(forType: .string)?.contains("快捷键复制 中文") == true)
     }
 
+    func testDragSelectionScrollsDownIntoEarlierOutput() throws {
+        let view = TerminalSession(tree: try tree("drag-scroll"), provider: .codex).terminal
+        view.frame = CGRect(x: 0, y: 0, width: 640, height: 240)
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = view
+        view.feed(text: (0..<80).map { "line \($0)" }.joined(separator: "\r\n"))
+        view.scrollUp(lines: 20)
+        let before = view.getTerminal().buffer.yDisp
+        XCTAssertGreaterThan(before, 0)
+        func mouse(_ type: NSEvent.EventType, y: CGFloat, number: Int) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type,
+                location: CGPoint(x: 15, y: y), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: number, clickCount: 1, pressure: 1))
+        }
+        view.mouseDown(with: try mouse(.leftMouseDown, y: view.bounds.height - 12, number: 1))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, y: -15, number: 2))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertGreaterThan(view.getTerminal().buffer.yDisp, before)
+        XCTAssertTrue(view.getSelection()?.contains("line") == true)
+        view.mouseUp(with: try mouse(.leftMouseUp, y: -15, number: 3))
+    }
+
     func testCodexUnsentInputCanBeCopiedWhileMouseTrackingIsEnabled() throws {
         let pasteboard = NSPasteboard.general
         let original = (pasteboard.pasteboardItems ?? []).map { item in
@@ -689,6 +712,7 @@ final class SessionTests: XCTestCase {
         // an unsent draft, so a normal drag must remain a local selection.
         view.feed(text: "\u{1B}[?1049h\u{1B}[?1002hCOPYABLE TEXT")
         XCTAssertNotEqual(view.getTerminal().mouseMode, .off)
+        XCTAssertFalse(view.allowMouseReporting)
 
         func mouse(_ type: NSEvent.EventType, x: CGFloat, number: Int) throws -> NSEvent {
             try XCTUnwrap(NSEvent.mouseEvent(with: type,
@@ -700,6 +724,9 @@ final class SessionTests: XCTestCase {
         view.mouseDown(with: try mouse(.leftMouseDown, x: 5, number: 1))
         view.mouseDragged(with: try mouse(.leftMouseDragged, x: 105, number: 2))
         view.mouseUp(with: try mouse(.leftMouseUp, x: 105, number: 3))
+        XCTAssertEqual(view.getSelection(), "COPYABLE TEXT")
+        // Output and linefeeds must not erase a completed selection.
+        view.feed(text: "\r\nMORE OUTPUT")
         XCTAssertEqual(view.getSelection(), "COPYABLE TEXT")
         view.copy(self)
         XCTAssertEqual(pasteboard.string(forType: .string), "COPYABLE TEXT")

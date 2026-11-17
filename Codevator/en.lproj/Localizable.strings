@@ -151,3 +151,5 @@
 "%@ 等待你处理" = "%@ needs your input";
 "等待处理" = "Needs input";
 "%lld 个会话等待你处理" = "%lld sessions need your input";
+
+"在此标签中启动 Codex、Claude、Antigravity 或终端。" = "Start Codex, Claude, Antigravity, or Terminal in this tab.";
