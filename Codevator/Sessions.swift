@@ -5,6 +5,69 @@ import Combine
 import Darwin
 import Dispatch
 
+struct ProgramStatusReport {
+    enum State: String { case idle, working, blocked, done, error, clear }
+    let state: State
+    let id: String?
+    let app: String?
+}
+
+// Antigravity can split an OSC 7501 report across PTY reads. Keep only the
+// bounded status payload; titles and messages are not needed for notifications.
+struct ProgramStatusDecoder {
+    private enum ScanState { case outside, escaped, prefix(Int), payload, payloadEscape }
+    private static let prefix = Array("7501;".utf8)
+    private var scanState = ScanState.outside
+    private var payload: [UInt8] = []
+
+    mutating func consume(_ bytes: ArraySlice<UInt8>) -> [ProgramStatusReport] {
+        var reports: [ProgramStatusReport] = []
+        for byte in bytes {
+            switch scanState {
+            case .outside:
+                if byte == 0x1b { scanState = .escaped }
+            case .escaped:
+                scanState = byte == 0x5d ? .prefix(0) : (byte == 0x1b ? .escaped : .outside)
+            case .prefix(let index):
+                if byte == Self.prefix[index] {
+                    scanState = index + 1 == Self.prefix.count ? .payload : .prefix(index + 1)
+                } else {
+                    scanState = byte == 0x1b ? .escaped : .outside
+                }
+            case .payload:
+                if byte == 0x07 {
+                    if let report = Self.decode(payload) { reports.append(report) }
+                    payload.removeAll(keepingCapacity: true)
+                    scanState = .outside
+                } else if byte == 0x1b {
+                    scanState = .payloadEscape
+                } else if byte >= 0x20, byte <= 0x7e, payload.count < 4096 {
+                    payload.append(byte)
+                } else {
+                    payload.removeAll(keepingCapacity: true)
+                    scanState = .outside
+                }
+            case .payloadEscape:
+                if byte == 0x5c, let report = Self.decode(payload) { reports.append(report) }
+                payload.removeAll(keepingCapacity: true)
+                scanState = byte == 0x1b ? .escaped : .outside
+            }
+        }
+        return reports
+    }
+
+    private static func decode(_ bytes: [UInt8]) -> ProgramStatusReport? {
+        guard let text = String(bytes: bytes, encoding: .ascii) else { return nil }
+        var values: [String: String] = [:]
+        for pair in text.split(separator: ":") {
+            let fields = pair.split(separator: "=", maxSplits: 1)
+            if fields.count == 2 { values[String(fields[0])] = String(fields[1]) }
+        }
+        guard let name = values["state"], let state = ProgramStatusReport.State(rawValue: name) else { return nil }
+        return ProgramStatusReport(state: state, id: values["id"], app: values["app"])
+    }
+}
+
 final class AccessibleTerminalView: LocalProcessTerminalView {
     private var editingMonitor: Any?
     private var wheelMonitor: Any?
@@ -17,8 +80,10 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
     var onPermissionSelectionCompleted: (() -> Void)?
     var onPermissionMenuOpened: (() -> Void)?
     var onScreenUpdated: (() -> Void)?
+    var onProgramStatus: ((ProgramStatusReport) -> Void)?
     private var draftInput = ""
     private var recentOutput = ""
+    private var programStatusDecoder = ProgramStatusDecoder()
     var refreshWholeSurfaceAfterOutput = false
     private var wholeSurfaceRefreshScheduled = false
     private var lastOutputTime: UInt64 = 0
@@ -27,6 +92,9 @@ final class AccessibleTerminalView: LocalProcessTerminalView {
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
+        if let onProgramStatus {
+            for report in programStatusDecoder.consume(slice) { onProgramStatus(report) }
+        }
         if onPermissionSelectionCompleted != nil {
             recentOutput = String((recentOutput + String(decoding: slice, as: UTF8.self)).suffix(512))
             let readableOutput = recentOutput.replacingOccurrences(
@@ -330,6 +398,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
     private var suppressScreenAttentionUntilClear = false
     private var selectingCodexPermission = false
     private var codexPermissionMenuWasVisible = false
+    private var antigravityReports: [String: ProgramStatusReport] = [:]
+    private var antigravityTurnWasWorking = false
+    private var suppressProgramAttentionUntilClear = false
     var onTurnCompleted: (() -> Void)?
     var onAttentionChanged: ((Bool) -> Void)?
     var hasManagedProcesses: Bool { active || stopping || (processGroup > 0 && kill(-processGroup, 0) == 0) }
@@ -362,7 +433,9 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         terminal.onSubmittedInput = { [weak self] input in self?.markSubmittedInput(input) }
         terminal.onInterruptedInput = { [weak self] in self?.markInterruptedInput() }
         terminal.onAnsweredPrompt = { [weak self] in self?.answeredHumanInputPrompt() }
-        if provider != .terminal {
+        if provider == .antigravity {
+            terminal.onProgramStatus = { [weak self] report in self?.handleProgramStatus(report) }
+        } else if provider != .terminal {
             terminal.onScreenUpdated = { [weak self] in self?.checkHumanInputPrompt() }
         }
         if provider == .codex {
@@ -372,6 +445,50 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
                 self?.checkCodexPermissionMenu()
                 self?.checkHumanInputPrompt()
             }
+        }
+    }
+    private func handleProgramStatus(_ report: ProgramStatusReport) {
+        guard provider == .antigravity, active, !stopping,
+              report.app == nil || report.app == "antigravity" else { return }
+        let id = report.id ?? ""
+        guard id.utf8.count <= 128 else { return }
+        if report.state != .clear, antigravityReports[id] == nil, antigravityReports.count >= 256 { return }
+        if report.state == .clear {
+            antigravityReports = antigravityReports.filter { key, _ in
+                !id.isEmpty && key != id && !key.hasPrefix(id + "/")
+            }
+        } else {
+            antigravityReports[id] = report
+        }
+        let states = antigravityReports.values.map(\.state)
+        if states.contains(.blocked) {
+            awaitingResponse = true
+            if !suppressProgramAttentionUntilClear { setNeedsAttention(true) }
+            return
+        }
+        suppressProgramAttentionUntilClear = false
+        setNeedsAttention(false)
+        if states.contains(.working) {
+            antigravityTurnWasWorking = true
+            awaitingResponse = true
+            attentionNotifiedForTurn = false
+            state = tr("回复中")
+            return
+        }
+        if antigravityReports[""]?.state == .done {
+            let shouldNotify = antigravityTurnWasWorking
+            antigravityTurnWasWorking = false
+            awaitingResponse = false
+            state = tr("已完成")
+            if shouldNotify { onTurnCompleted?() }
+        } else if antigravityReports[""]?.state == .error {
+            antigravityTurnWasWorking = false
+            awaitingResponse = false
+            state = tr("失败：") + provider.title
+        } else if antigravityReports[""]?.state == .idle {
+            antigravityTurnWasWorking = false
+            awaitingResponse = false
+            state = tr("已就绪")
         }
     }
     private func markSubmittedInput(_ input: String) {
@@ -439,6 +556,7 @@ final class TerminalSession: NSObject, ObservableObject, @preconcurrency LocalPr
         setNeedsAttention(false)
         attentionNotifiedForTurn = false
         suppressScreenAttentionUntilClear = true
+        if provider == .antigravity { suppressProgramAttentionUntilClear = true }
     }
     private func setNeedsAttention(_ value: Bool) {
         guard needsAttention != value else { return }

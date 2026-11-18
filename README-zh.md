@@ -24,12 +24,12 @@ Codevator 让不同的编程任务各有自己的位置。左侧放本机 Git �
 
 - **在项目之间切换，不用重新找工作现场。** 侧边栏列出项目及其 worktree。你可以把 worktree 理解为同一 Git 项目的另一个工作文件夹：在别的分支上工作时，不会打乱主目录。
 - **为每项任务开独立标签。** 在选中的 worktree 中启动 Codex、Claude Code、Antigravity CLI 或普通终端。同一个 worktree 也能同时打开多个标签，稍后再切回来。
-- **一眼找到还开着的会话。** 有终端标签的 worktree 会显示终端标识。在 Codex 和 Claude Code 标签中，绿色表示提问正在等待回复；橙色表示回复已完成、但你还没查看。两种提示可以同时出现在同一个 worktree 或项目旁。回复完成时可以播放提示音；允许通知后，后台完成的回复也会弹出 macOS 提醒。
+- **一眼找到需要关注的会话。** 有终端标签的 worktree 会显示终端标识。在 Codex、Claude Code 和 Antigravity 标签中，绿色表示工具正在处理，感叹号表示需要你操作，橙色数字表示有尚未查看的回复。切到别的窗口后，Codevator 可以发送提醒；回复完成时也可以播放提示音。
 - **直接从侧边栏创建 worktree。** 可以选择已有的本地或远程分支，也可以创建新分支。应用会推荐文件夹名称，创建前仍可自行修改。
 
 ## 开始使用
 
-需要 macOS 14 或更新版本，以及 Git。只用普通终端时，不需要安装 AI 工具；如果要使用 Codex、Claude Code 或 Antigravity CLI，请先在 Mac 上安装对应的命令行工具，并通过工具本身登录。
+需要 macOS 14 或更新版本，以及 Git。只用普通终端时，不需要安装 AI 工具；如果要使用 Codex、Claude Code 或 Antigravity CLI，请先在 Mac 上安装对应的命令行工具，并通过工具本身登录。Antigravity 的状态提醒需要 CLI 1.4 或更新版本。
 
 1. 从[发布页面](https://github.com/LaughingVzr/Codevator/releases)下载磁盘映像，打开后把 Codevator 拖入「应用程序」。应用目前使用临时签名，尚未经过 Apple 公证，首次打开时 macOS 可能要求你确认。
 2. 点击侧边栏的 **+**，或按 **⌘O**，选择本机已有的 Git 项目。

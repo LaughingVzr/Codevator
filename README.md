@@ -24,12 +24,12 @@ On macOS 26, Liquid Glass gives the sidebar, toolbar, and tabs a translucent loo
 
 - **Move between projects without losing your place.** See your projects and their worktrees in the sidebar. A worktree is a separate working folder for the same Git project, so you can work on another branch without disturbing your main folder.
 - **Give each task its own tab.** Open Codex, Claude Code, Antigravity CLI, or a regular terminal in the selected worktree. Open more than one tab, even in the same worktree, and return to them later.
-- **See where you left a session running.** A terminal icon marks worktrees with open tabs. In Codex and Claude Code tabs, green shows a prompt waiting for a reply; orange shows a reply that finished while you were elsewhere and has not been viewed yet. Both can appear beside the same worktree or project. For Codex and Claude Code, Codevator can play a sound when a reply finishes and, if you allow notifications, alert you when it finishes in the background.
+- **See what needs your attention.** A terminal icon marks worktrees with open tabs. In Codex, Claude Code, and Antigravity tabs, green means the tool is working, an exclamation mark means it needs your input, and an orange count marks replies you have not viewed. Codevator can alert you in the background and play a sound when a reply finishes.
 - **Create worktrees from the sidebar.** Start from a local or remote branch, or make a new one. Codevator suggests a folder name, and you can change it before creating the worktree.
 
 ## Get started
 
-You need macOS 14 or later and Git. A regular terminal works without installing an AI tool. To use Codex, Claude Code, or Antigravity CLI, install the tool on your Mac and sign in through it.
+You need macOS 14 or later and Git. A regular terminal works without installing an AI tool. To use Codex, Claude Code, or Antigravity CLI, install the tool on your Mac and sign in through it. Antigravity activity alerts need Antigravity CLI 1.4 or later.
 
 1. Get the disk image from [Releases](https://github.com/LaughingVzr/Codevator/releases), open it, and drag Codevator into Applications. The app uses an ad-hoc signature and is not notarized, so macOS may ask you to review it before opening.
 2. Click **+** in the sidebar, or press **⌘O**, and choose a local Git project.
@@ -46,7 +46,7 @@ This README describes the current source code. A downloadable release may not in
 - Switching projects or tabs leaves their sessions running. Codevator asks before closing a running tab or quitting while sessions are still running.
 - Your projects and selected worktree are remembered when you reopen the app. Running sessions and terminal history are not restored after quitting.
 - Codevator only removes a worktree when it is not the main one and has no running session or changes and new files waiting to be committed. Removing a project from the sidebar leaves its files on disk, but stops its open sessions after you confirm.
-- Codex and Claude Code still handle their own sign-in and command approvals. Codevator does not approve commands for them.
+- Codex, Claude Code, and Antigravity CLI still handle their own sign-in and command approvals. Codevator does not approve commands for them.
 
 <details>
 <summary>Build and test from source</summary>

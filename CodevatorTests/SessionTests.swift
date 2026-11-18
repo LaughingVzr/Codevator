@@ -312,6 +312,55 @@ final class SessionTests: XCTestCase {
         await session.stop()
     }
 
+    func testAntigravityStatusReportsPostAttentionAndCompletion() async throws {
+        let tree = try tree("antigravity-status")
+        let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("antigravity-workspace.json")))
+        let tab = workspace.sessions.createTab(for: tree.id, provider: .antigravity)
+        var attentionNotifications = 0
+        var completionNotifications = 0
+        var sounds = 0
+        workspace.postAttentionNotification = { _, _, _ in attentionNotifications += 1 }
+        workspace.postCompletionNotification = { _, _, _ in completionNotifications += 1 }
+        workspace.playCompletionSound = { sounds += 1 }
+        await workspace.sessions.start(tree, tabID: tab.id, provider: .antigravity, override: "/bin/cat")
+        let session = try XCTUnwrap(workspace.sessions.sessions[tab.id])
+        func report(_ value: String) {
+            let bytes = Array(value.utf8)
+            session.terminal.dataReceived(slice: bytes[...])
+        }
+
+        // A startup trust/approval prompt matters even before a model turn.
+        report("\u{1B}]7501;state=blocked:kind=permission:app=antigravity\u{1B}\\")
+        XCTAssertTrue(session.needsAttention)
+        XCTAssertEqual(workspace.sessions.attentionCount(in: tree.id), 1)
+        XCTAssertEqual(attentionNotifications, 1)
+        report("\u{1B}]7501;state=blocked:kind=permission:app=antigravity\u{1B}\\")
+        XCTAssertEqual(attentionNotifications, 1)
+        session.terminal.onAnsweredPrompt?()
+        XCTAssertFalse(session.needsAttention)
+
+        // The CLI may split a report across several PTY reads.
+        report("\u{1B}]7501;state=wor")
+        report("king:app=antigravity\u{07}")
+        XCTAssertEqual(workspace.sessions.pendingCount(in: tree.id), 1)
+        report("\u{1B}]7501;state=blocked:kind=question:app=antigravity\u{1B}\\")
+        XCTAssertTrue(session.needsAttention)
+        XCTAssertEqual(attentionNotifications, 2)
+        report("\u{1B}]7501;state=working:app=antigravity\u{1B}\\")
+        XCTAssertFalse(session.needsAttention)
+        report("\u{1B}]7501;state=done:app=antigravity\u{1B}\\")
+        XCTAssertFalse(session.awaitingResponse)
+        XCTAssertEqual(workspace.sessions.pendingCount(in: tree.id), 0)
+        XCTAssertEqual(completionNotifications, 1)
+        XCTAssertEqual(sounds, 1)
+        XCTAssertEqual(workspace.sessions.unreadCount(in: tree.id), 1)
+        report("\u{1B}]7501;state=done:app=antigravity\u{1B}\\")
+        report("\u{1B}]7501;state=blocked:app=another-tool\u{1B}\\")
+        XCTAssertEqual(completionNotifications, 1)
+        XCTAssertEqual(attentionNotifications, 2)
+        await workspace.sessions.close(tab.id)
+    }
+
     func testBackgroundHumanInputPostsNotificationForCorrectWorktree() throws {
         let tree = try tree("attention")
         let workspace = Workspace(store: ConfigurationStore(file: root.appendingPathComponent("attention-workspace.json")))

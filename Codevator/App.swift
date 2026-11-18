@@ -988,10 +988,10 @@ private struct NotificationSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("通知").font(.title2.weight(.semibold))
-            Text("Codex 或 Claude 完成回复后，在你查看其他窗口时提醒你。")
+            Text("编程工具等待你处理或完成回复时，在你查看其他窗口时提醒你。")
                 .foregroundStyle(.secondary)
             Toggle("任务完成提示音", isOn: $completionSoundEnabled)
-            Text("Codex 或 Claude 完成回复时播放提示音，包括正在查看当前对话时。")
+            Text("AI 回复完成时播放提示音，包括正在查看当前对话时。")
                 .font(.caption).foregroundStyle(.secondary)
             if let status {
                 switch status {

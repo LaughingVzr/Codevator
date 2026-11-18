@@ -80,9 +80,9 @@
 "重新检测 CLI" = "Detect CLIs Again";
 "%@ 回复已完成" = "%@ response complete";
 "通知" = "Notifications";
-"Codex 或 Claude 完成回复后，在你查看其他窗口时提醒你。" = "Get notified when Codex or Claude finishes while you are in another window.";
+"编程工具等待你处理或完成回复时，在你查看其他窗口时提醒你。" = "Get notified when a coding tool needs your input or finishes while you are in another window.";
 "任务完成提示音" = "Completion Sound";
-"Codex 或 Claude 完成回复时播放提示音，包括正在查看当前对话时。" = "Play a sound when Codex or Claude finishes, even while you are viewing the conversation.";
+"AI 回复完成时播放提示音，包括正在查看当前对话时。" = "Play a sound when an AI reply finishes, even while you are viewing the conversation.";
 "通知已允许" = "Notifications allowed";
 "尚未允许通知。启动编程工具时会请求权限。" = "Notifications have not been allowed yet. You will be asked when you start a coding tool.";
 "允许通知" = "Allow Notifications";

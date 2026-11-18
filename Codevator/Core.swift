@@ -344,13 +344,18 @@ actor CLIResolver {
     }
     func resolve(_ provider: CLIProvider, override: String?) async throws -> (String, [String: String]) {
         guard provider != .terminal else { return try await resolveShell() }
-        let env: [String: String]
+        var env: [String: String]
         do { env = try await environment() }
         catch {
             guard let override, !override.isEmpty else { throw error }
             var fallback = ProcessInfo.processInfo.environment
             fallback["PATH"] = URL(fileURLWithPath: override).deletingLastPathComponent().path + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
             fallback["TERM"] = "xterm-256color"; env = fallback
+        }
+        if provider == .antigravity {
+            // Request per-PTY status reports without changing global CLI settings.
+            env["AGY_CLI_OSC7501"] = "on"
+            env["AGY_CLI_OSC7501_MESSAGES"] = "brief"
         }
         let paths: [String]
         if let override, !override.isEmpty {
